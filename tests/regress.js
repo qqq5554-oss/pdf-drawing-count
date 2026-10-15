@@ -64,7 +64,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   const ducts = () => page.evaluate(H => S.ducts.map(d => {
     const g = ductGeo(d), k = mmPerPt(d.page);
     return {
-      size: d.size, wdmm: d.wd ? Math.round(d.wd * k) : null,
+      how: d.how, size: d.size, wdmm: d.wd ? Math.round(d.wd * k) : null,
       L: ductLenM(d), Lc: ductLenC(d), ext: ductExtM(d), kind: g.kind,
       pts: d.pts.map(q => [+(q[0] / SCALE).toFixed(1), +(H - q[1] / SCALE).toFixed(1)]),
       wc: widthCheck(d),
@@ -80,6 +80,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("中心線 y=300", D[0] && D[0].pts.every(p => near(p[1], 300, 0.6)), D[0] && D[0].pts);
   check("長度 8 m", D[0] && near(D[0].L, 8, 0.05), D[0] && D[0].L);
   check("無寬度提醒", D[0] && !D[0].wc, D[0] && D[0].wc);
+  check("記錄為自動標示", D[0] && D[0].how === "auto", D[0] && D[0].how);
 
   console.log("● 寬度提醒");
   await open("straight");
@@ -137,6 +138,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   console.log("● 手動標示（端點吸附）");
   await open("elbow");
   await manual([[100.5, 300], [485, 300.4], [485, 600]], ["800", "400"]); D = await ducts();
+  check("記錄為手動標示", D[0] && D[0].how === "manual", D[0] && D[0].how);
   check("建立一支 3 點風管", D.length === 1 && D[0].pts.length === 3, D[0] && D[0].pts);
   check("吸附到端點 (100,280)? 否則保持點選位置", D[0] && near(D[0].pts[0][0], 100.5, 0.6) || near(D[0].pts[0][0], 100, 0.01), D[0] && D[0].pts[0]);
 

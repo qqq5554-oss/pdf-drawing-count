@@ -2803,7 +2803,8 @@ function ductClick(p, e) {
 async function finishDuct() {
   const D = S.draft; S.draft = null;
   if (!D || D.pts.length < 2) { draw(); return; }
-  const d = Object.assign({ id: uid(), seq: ++S.ductSeq, page: D.page, pts: D.pts, sys: S.dsys, size: "" }, D.meta || {});
+  // how：標示方式（"auto" 自動、"manual" 手動；舊專案與匯入的沒有）
+  const d = Object.assign({ id: uid(), seq: ++S.ductSeq, page: D.page, pts: D.pts, sys: S.dsys, size: "", how: "manual" }, D.meta || {});
   const k = mmPerPt(d.page), wEl = $("ductW"), hEl = $("ductH");
   // 手動標示沒填寬度：依兩側邊線量測自動填入
   if (!wEl.value.trim() && k) { measureWd(d); if (d.wd) setAutoW(round50(d.wd * k)); }
@@ -2920,7 +2921,8 @@ function paintDucts() {
     const [ax, ay] = d.pts[li - 1], [bx, by] = d.pts[li], mx = (ax + bx) / 2, my = (ay + by) / 2;
     const L = ductLenM(d);
     const wcl = z ? widthCheck(d) : null;
-    const text = `[${n.get(d.id)}] ${d.sys || "?"} ${z ? sizeText(z) : "尺寸？"} L=${L != null ? L.toFixed(2) + "m" : "未設比例"}${wcl ? `（圖面寬約 ${wcl.dmm}）` : ""}`;
+    const how = d.how === "auto" ? "自" : d.how === "manual" ? "手" : "";
+    const text = `[${n.get(d.id)}${how ? "·" + how : ""}] ${d.sys || "?"} ${z ? sizeText(z) : "尺寸？"} L=${L != null ? L.toFixed(2) + "m" : "未設比例"}${wcl ? `（圖面寬約 ${wcl.dmm}）` : ""}`;
     vctx.font = `600 ${fs}px "Noto Sans TC", Arial, sans-serif`;
     const tw = vctx.measureText(text).width, horiz = Math.abs(bx - ax) >= Math.abs(by - ay);
     const tx = horiz ? mx - tw / 2 : mx + 8 / S.vs, ty = horiz ? my - fs * 1.9 : my - fs * 0.7;
@@ -3035,7 +3037,7 @@ function renderDuct() {
   $("ductEdit").hidden = !d;
   if (d) {
     const L = ductLenM(d);
-    $("deTitle").textContent = `第 ${nOf.get(d.id)} 項，${pageName(d.page)}`;
+    $("deTitle").textContent = `第 ${nOf.get(d.id)} 項，${pageName(d.page)}` + (d.how === "auto" ? "（自動標示）" : d.how === "manual" ? "（手動標示）" : "");
     $("deLen").textContent = L != null ? `L = ${L.toFixed(3)} m` : "未設定比例";
     const gx = ductGeo(d), k = mmPerPt(d.page);
     $("deExt").innerHTML = !S.dc.extOn ? "" : [0, 1].map(e => {
@@ -4177,7 +4179,7 @@ async function pickClick(p, e) {
   hideFinish();
   if (!res) { toast("這裡沒有可點選的風管邊線"); return; }
   if (polyLen(res.pts) < 2) return;
-  S.pending = { page: S.page, pts: res.pts.map(q => q.slice()), meta: res.mid ? { edgeSty: res.sty.key, wd: res.w } : { single: true }, res };
+  S.pending = { page: S.page, pts: res.pts.map(q => q.slice()), meta: res.mid ? { how: "auto", edgeSty: res.sty.key, wd: res.w } : { how: "auto", single: true }, res };
   // 自動填入寬度（依圖面兩側邊線距離，取 50 mm 的倍數）
   const k = mmPerPt(S.page);
   if (res.mid && k) setAutoW(round50(res.w * k));
