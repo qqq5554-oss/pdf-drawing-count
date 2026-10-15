@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.14</title>
+<title>圖面符號清點 v4.15</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.14</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.15</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -1483,7 +1483,7 @@ async function loadPage(i) {
     toast("這一頁幾乎沒有向量線條（可能是掃描圖），請改用影像比對");
   }
   if (S.draft && S.draft.page !== i) S.draft = null;
-  S.pickCache = null; S.pick = null; S.pending = null; hideFinish();
+  S.pickCache = null; S.pick = null; S.pending = null; S.wpick = null; S.wsel = null; hideFinish();
   if (S.cal && S.cal.page !== i) S.cal = null;
   setMode(S.mode); refreshAll(); scheduleHiRes();
   if (S.scaleHint[i] === undefined) detectScale(i).then(() => { if (S.page === i) renderDuct(); });
@@ -2853,7 +2853,7 @@ function widthPick(p) {
   if (i < 0) { toast("這裡沒有線段，請點在風管邊線上"); return; }
   const sg = ix.segs, a = [sg[4 * i], sg[4 * i + 1], sg[4 * i + 2], sg[4 * i + 3]];
   const W0 = S.wpick;
-  if (!W0 || W0.page !== S.page || W0.i === i) { S.wpick = { page: S.page, i, a }; S.wref = null; toast("已選第一條邊線，請按住 Ctrl 點另一側邊線"); drawOver(); return; }
+  if (!W0 || W0.page !== S.page || W0.i === i) { S.wpick = { page: S.page, i, a }; S.wref = null; S.wsel = null; toast("已選第一條邊線，請按住 Ctrl 點另一側邊線"); drawOver(); return; }
   S.wpick = null;
   const b = W0.a, bl = Math.hypot(b[2] - b[0], b[3] - b[1]) || 1, ux = (b[2] - b[0]) / bl, uy = (b[3] - b[1]) / bl;
   const al = Math.hypot(a[2] - a[0], a[3] - a[1]) || 1;
@@ -2861,6 +2861,7 @@ function widthPick(p) {
   const mx = (a[0] + a[2]) / 2, my = (a[1] + a[3]) / 2, wd = Math.abs((mx - b[0]) * -uy + (my - b[1]) * ux);
   if (wd < 1) { toast("兩條線太近，請點風管兩側的邊線"); drawOver(); return; }
   S.wref = { page: S.page, wd, sty: styOf(ix, W0.i).key };
+  S.wsel = { page: S.page, lines: [b, a] };                      // 兩條都維持橘色，直到標示完成或取消
   const k = mmPerPt(S.page);
   // 自動標示模式：直接以兩條邊線的中心線（兩線重疊範圍）建立預覽
   if (S.dpick === "seg") {
@@ -2892,7 +2893,7 @@ async function finishDuct() {
   const d = Object.assign({ id: uid(), seq: ++S.ductSeq, page: D.page, pts: D.pts, sys: S.dsys, size: "", how: "manual" }, D.meta || {});
   // 用 Ctrl 點兩側邊線指定的寬度優先
   if (S.wref && S.wref.page === d.page) Object.assign(d, { wd: S.wref.wd, edgeSty: S.wref.sty, wdV: 2, wdTried: true });
-  S.wref = null; S.wpick = null;
+  S.wref = null; S.wpick = null; S.wsel = null;
   const k = mmPerPt(d.page), wEl = $("ductW"), hEl = $("ductH");
   // 手動標示沒填寬度：依兩側邊線量測自動填入
   if (!wEl.value.trim() && k) { measureWd(d); if (d.wd) setAutoW(round50(d.wd * k)); }
@@ -3037,8 +3038,13 @@ function paintOver() {
   }
   octx.setTransform(S.vs * dpr, 0, 0, S.vs * dpr, S.ox * dpr, S.oy * dpr);
   octx.lineJoin = "round"; octx.lineCap = "round";
-  // Ctrl 指定寬度：已選的第一條邊線（橙色）
-  if (S.wpick && S.wpick.page === S.page) { const a = S.wpick.a; octx.strokeStyle = "#F97316"; octx.lineWidth = 4 / S.vs; octx.beginPath(); octx.moveTo(a[0] * SCALE, a[1] * SCALE); octx.lineTo(a[2] * SCALE, a[3] * SCALE); octx.stroke(); }
+  // Ctrl 指定寬度：已選的邊線（橙色；第二條選中後兩條都保留到標示完成或取消）
+  {
+    const ls = [];
+    if (S.wpick && S.wpick.page === S.page) ls.push(S.wpick.a);
+    if (S.wsel && S.wsel.page === S.page) ls.push(...S.wsel.lines);
+    if (ls.length) { octx.strokeStyle = "#F97316"; octx.lineWidth = 4 / S.vs; octx.beginPath(); for (const a of ls) { octx.moveTo(a[0] * SCALE, a[1] * SCALE); octx.lineTo(a[2] * SCALE, a[3] * SCALE); } octx.stroke(); }
+  }
   // 點選線段的預覽：原線段（藍）、另一側邊線（藍）、將建立的風管（系統色虛線）
   const PK = S.mode === "duct" && S.dpick === "seg" ? S.pick : null;
   if (PK && S.cursor) {
@@ -4310,7 +4316,7 @@ async function commitDuct() {
   if (!S.draft || S.draft.pts.length < 2) { toast("至少需要兩個點"); return; }
   await finishDuct();
 }
-function cancelDuct() { S.draft = null; S.pending = null; S.wref = null; S.wpick = null; hideFinish(); drawOver(); renderDuct(); }
+function cancelDuct() { S.draft = null; S.pending = null; S.wref = null; S.wpick = null; S.wsel = null; hideFinish(); drawOver(); renderDuct(); }
 function showFinish(e) {
   const b = $("finishBtn"), r = view.getBoundingClientRect();
   b.hidden = false;
@@ -4497,7 +4503,7 @@ window.addEventListener("keydown", e => {
     if (k === "Delete" || k === "Backspace" || k.toLowerCase() === "x") { e.preventDefault(); reviewAct(false); return; }
     if (k === "Escape") { endReview(); return; }
   }
-  if (S.mode === "duct" && (S.draft || S.pending)) {
+  if (S.mode === "duct" && (S.draft || S.pending || S.wpick || S.wsel)) {
     if (e.key === "Enter") { e.preventDefault(); commitDuct(); return; }
     if (e.key === "Backspace" && S.draft) { e.preventDefault(); S.draft.pts.pop(); if (!S.draft.pts.length) S.draft = null; hideFinish(); drawOver(); return; }
     if (e.key === "Escape") { cancelDuct(); return; }

@@ -142,10 +142,15 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     await open("manual-width");
     await page.evaluate(m => { S.dpick = m; setMode("duct"); }, mode);
     await ctrlTwo(button);
-    r = await page.evaluate(H => ({ w: $("ductW").value, wref: S.wref && Math.round(S.wref.wd * 20), pend: S.pending && S.pending.pts.map(q => +(H - q[1] / SCALE).toFixed(1)) }), H);
+    r = await page.evaluate(H => ({ w: $("ductW").value, wref: S.wref && Math.round(S.wref.wd * 20), pend: S.pending && S.pending.pts.map(q => +(H - q[1] / SCALE).toFixed(1)), sel: S.wsel ? S.wsel.lines.length : 0 }), H);
+    check(`${label}：兩條邊線都以橘色標示`, r.sel === 2, r);
     if (mode === "seg") check(`${label}：建立中心線預覽 y=300、寬度 900`, r.w === "900" && r.pend && r.pend.every(y => near(y, 300, 0.3)), r);
     else check(`${label}：指定寬度 900`, r.w === "900" && r.wref === 900, r);
   }
+
+  await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("Escape");
+  r = await page.evaluate(() => !!S.wsel);
+  check("Esc 取消後橘色標示清除", r === false, r);
 
   console.log("● 穿管處有重複線段仍可接續");
   await open("passthru-dup");
