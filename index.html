@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.11</title>
+<title>圖面符號清點 v4.12</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.11</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.12</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -1002,6 +1002,35 @@ const Vec = (() => {
       }
       return best;
     };
+    // 邊線盡頭可否跨越：沒有接任何線，或接著一條連續穿過的線（兩側反向延伸，例如穿管的邊線）→ 可跨越
+    const freeEnd = (uniq, end, prev) => {
+      // 忽略往回重疊在自己邊線上的重複線段（CAD 常見的重複線）
+      const fx = end[0] - prev[0], fy = end[1] - prev[1], fl = Math.hypot(fx, fy) || 1;
+      uniq = uniq.filter(([, o]) => { const vx = o[0] - end[0], vy = o[1] - end[1], l = Math.hypot(vx, vy) || 1; return (fx * vx + fy * vy) / (fl * l) > -0.999; });
+      if (!uniq.length) return true;
+      if (uniq.length !== 2) return false;
+      const [a, b] = uniq.map(([, o]) => { const vx = o[0] - end[0], vy = o[1] - end[1], l = Math.hypot(vx, vy) || 1; return [vx / l, vy / l]; });
+      return a[0] * b[0] + a[1] * b[1] < -0.99;
+    };
+    // 缺口 p→q 中間是否有其他管路邊線橫穿（不含兩端）
+    const crossed = (p, q) => {
+      const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); if (L < 1e-6) return false;
+      for (const i of segsIn(ix, Math.min(p[0], q[0]) - 1, Math.min(p[1], q[1]) - 1, Math.max(p[0], q[0]) + 1, Math.max(p[1], q[1]) + 1)) {
+        if (used.has(i) || !okL(ix, i, mask) || (ok && !ok(i))) continue;       // 只看可接續的線型（管路邊線），忽略引線與底圖
+        const [a, b] = E(i), ex = b[0] - a[0], ey = b[1] - a[1], den = dx * ey - dy * ex; if (Math.abs(den) < 1e-9) continue;
+        const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den, s2 = ((a[0] - p[0]) * dy - (a[1] - p[1]) * dx) / den;
+        if (t * L > tol && t * L < L - tol && s2 > 0.01 && s2 < 0.99) return true;
+      }
+      return false;
+    };
+    // 盡頭接著轉角或另一條線的端點：可能是主管的三通開口（缺口中間沒有線橫穿 → 接續），
+    // 也可能是分支接到主管（缺口會穿過主管邊線 → 不接續，避免接到同一直線上的另一支管）
+    const tryBridge = (uniq, end, prev) => {
+      const br = bridge(end, prev); if (!br) return null;
+      if (freeEnd(uniq, end, prev)) return br;
+      const ux = end[0] - prev[0], uy = end[1] - prev[1], l = Math.hypot(ux, uy) || 1;
+      return crossed(end, [end[0] + ux / l * br.tn, end[1] + uy / l * br.tn]) ? null : br;
+    };
     for (const atEnd of [true, false]) {
       for (let step = 0; step < 5000; step++) {
         const end = atEnd ? pts[pts.length - 1] : pts[0], prev = atEnd ? pts[pts.length - 2] : pts[1];
@@ -1015,7 +1044,7 @@ const Vec = (() => {
             return Math.abs((dx * vy - dy * vx) / (ld * l)) < 0.017 && (dx * vx + dy * vy) > 0;
           });
           if (!col.length && gap > 0) {
-            const br = bridge(end, prev);
+            const br = tryBridge(uniq, end, prev);
             if (br) { used.add(br.i); segs.push(br.i); bridges++; if (atEnd) pts.push(br.far); else pts.unshift(br.far); continue; }
           }
           if (col.length !== 1) break;
@@ -1107,7 +1136,31 @@ const Vec = (() => {
       }
     return out;
   }
-  return { learn, buildIndex, segsInRect, normTpl, variants, search, covered, snap, osnap, nearestSeg, chain, centerOf, segsIn };
+  // 量寬：在 (x,y) 垂直於方向 (ux,uy) 找兩側平行邊線，取「最對稱於該點」的一對（手動畫的中心線量寬用）
+  // 回傳 { w, off, i }：w 寬度、off 中心偏移（正值往法向量 (-uy,ux) 側）、i 其中一側線段；找不到回傳 null
+  function pairAcross(ix, x, y, ux, uy, maxW, mask, ok, same) {
+    const S = ix.segs, lines = [];
+    for (const i of segsIn(ix, x - maxW, y - maxW, x + maxW, y + maxW)) {
+      if (!okL(ix, i, mask) || (ok && !ok(i))) continue;
+      const x1 = S[4 * i], y1 = S[4 * i + 1], dx = S[4 * i + 2] - x1, dy = S[4 * i + 3] - y1, L = Math.hypot(dx, dy);
+      if (L < 1e-6 || Math.abs(dx / L * uy - dy / L * ux) > 0.026) continue;   // 夾角約 1.5° 內
+      const t = (x - x1) * dx / L + (y - y1) * dy / L;
+      if (t < -0.3 || t > L + 0.3) continue;                                   // 必須跨過量測位置
+      const sd = (x1 - x) * -uy + (y1 - y) * ux;
+      if (Math.abs(sd) > maxW || Math.abs(sd) < 0.3) continue;
+      lines.push({ i, sd });
+    }
+    let best = null;
+    for (const a of lines) if (a.sd > 0) for (const b of lines) {
+      if (b.sd >= 0 || (same && !same(a.i, b.i))) continue;
+      const w = a.sd - b.sd, off = (a.sd + b.sd) / 2;
+      if (w < 1.5 || Math.abs(off) > Math.max(1.5, w * 0.25)) continue;
+      const score = Math.abs(off) + w * 0.02;
+      if (!best || score < best.score) best = { w, off, i: a.i, score };
+    }
+    return best;
+  }
+  return { learn, buildIndex, segsInRect, normTpl, variants, search, covered, snap, osnap, nearestSeg, chain, centerOf, segsIn, pairAcross };
 })();
 
 
@@ -3345,7 +3398,10 @@ async function openProject(file) {
   if (Array.isArray(o.pageNames)) o.pageNames.forEach((n, i) => { if (n && i < S.pdf.numPages) S.pageNames[i] = n; });
   S.zones = o.zones || {}; S.zoneVer++; NUM_CACHE.clear();
   S.styLocks = Array.isArray(o.styLocks) ? o.styLocks : []; S.styVer++; S.pickCache = null;
-  S.ducts = o.ducts || []; S.ductSeq = o.ductSeq || S.ducts.reduce((a, d) => Math.max(a, d.seq || 0), 0); S.scales = o.scales || {};
+  S.ducts = o.ducts || [];
+  // 手動標示的寬度與邊線線型改用對稱量測（v4.12），舊專案的量測值重新計算
+  S.ducts.forEach(d => { if (d.how === "manual" && !d.wdV) { delete d.wd; delete d.wdTried; delete d.edgeSty; } });
+  S.ductSeq = o.ductSeq || S.ducts.reduce((a, d) => Math.max(a, d.seq || 0), 0); S.scales = o.scales || {};
   if (o.ductCfg) { S.dc = normCfg(Object.assign({}, S.dc, o.ductCfg)); saveCfg(); }
   if (o.dsys) S.dsys = o.dsys; if (!sysOf(S.dsys)) S.dsys = S.dc.systems[0].name;
   if (o.labelPt) S.labelPt = o.labelPt; if (o.mergeNum !== undefined) S.mergeNum = o.mergeNum; if (o.showPath !== undefined) S.showPath = o.showPath;
@@ -3463,18 +3519,24 @@ function measureWd(d) {
   const k = mmPerPt(d.page), P = d.pts.map(q => [q[0] / SCALE, q[1] / SCALE]), ws = [];
   const segs = []; for (let i = 1; i < P.length; i++) segs.push([P[i - 1], P[i], Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])]);
   segs.sort((a, b) => b[2] - a[2]);
-  let sty = null;
   for (const [a, b, l] of segs) {
     if (l < 1) continue;
     const ux = (b[0] - a[0]) / l, uy = (b[1] - a[1]) / l;
     for (const t of [0.5, 0.3, 0.7, 0.15, 0.85, 0.4, 0.6]) {
-      const res = Vec.snap(ix, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, 0.01, k ? 1600 / k : 45, visMask(), lockOk(ix), sameFn(ix), [ux, uy]);
-      if (res && res.type === "mid" && res.w > 0) { ws.push(res.w); if (!sty && res.i != null) sty = styOf(ix, res.i); }
+      const px = a[0] + (b[0] - a[0]) * t, py = a[1] + (b[1] - a[1]) * t, maxW = k ? 1600 / k : 45;
+      // 先找對稱於中心線的一對邊線；找不到才退回最接近的一對平行線
+      const pr = Vec.pairAcross(ix, px, py, ux, uy, maxW, visMask(), lockOk(ix), sameFn(ix));
+      if (pr) ws.push([pr.w, pr.i]);
+      else {
+        const res = Vec.snap(ix, px, py, 0.01, maxW, visMask(), lockOk(ix), sameFn(ix), [ux, uy]);
+        if (res && res.type === "mid" && res.w > 0) ws.push([res.w, res.i]);
+      }
       if (ws.length >= 5) break;
     }
     if (ws.length >= 5) break;
   }
-  if (ws.length) { ws.sort((a, b) => a - b); d.wd = ws[ws.length >> 1]; if (!d.edgeSty && sty) d.edgeSty = sty.key; }
+  // 取寬度中位數，線型也取中位數那一組的邊線
+  if (ws.length) { ws.sort((a, b) => a[0] - b[0]); const [w, i] = ws[ws.length >> 1]; d.wd = w; d.wdV = 2; if (!d.edgeSty && i != null) d.edgeSty = styOf(ix, i).key; }
   return d.wd || null;
 }
 // 圖面寬度與輸入的寬度（W 或 D）相差超過 15% 且超過 50 mm 時回傳差異

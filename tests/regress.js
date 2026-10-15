@@ -110,6 +110,27 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("長度涵蓋整支 8 m", D[0] && near(D[0].L, 8, 0.1), D[0] && D[0].L);
   check("寬度 800", r && r.wAuto === "800", r);
 
+  console.log("● 手動標示量寬（對稱於中心線，忽略內部細線）");
+  await open("manual-width");
+  await manual([[120, 300], [480, 300]]); D = await ducts();
+  check("寬度量到 900（不是內部細線的 600）", D[0] && near(D[0].wdmm, 900, 5), D[0] && D[0].wdmm);
+  r = await page.evaluate(() => S.ducts[0].edgeSty);
+  check("邊線線型取風管邊線（0.7pt）", r && r.startsWith("S|0.7"), r);
+
+  console.log("● 穿管處有重複線段仍可接續");
+  await open("passthru-dup");
+  r = await autoPick(150, 280, ["", "400"]); D = await ducts();
+  check("一次標示成單一風管、長度 8 m", D.length === 1 && near(D[0].L, 8, 0.1), D[0] && D[0].L);
+
+  console.log("● 三通分支不跨越到同一直線上的另一支管");
+  await open("tee-nobridge");
+  await autoPick(150, 280, ["", "250"]);
+  r = await autoPick(240, 200, ["", "250"]); D = await ducts();
+  const nb = D.find(d => d.size.startsWith("400x250") && d.pts.every(p => near(p[0], 250, 0.6)));
+  check("分支寬度 400", r && r.wAuto === "400", r);
+  check("分支只到主管底邊（y 100~280），沒有接到上方立管", nb && Math.max(...nb.pts.map(p => p[1])) < 282, nb && nb.pts);
+  check("分支判定三通、延伸到主管最遠側（總長 4.0 m）", nb && nb.kind.includes("三通") && near(nb.L, 4.0, 0.1), nb && [nb.kind, nb.L]);
+
   console.log("● 三通");
   await open("tee");
   const m = await autoPick(150, 280, ["", "400"]);
