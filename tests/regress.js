@@ -120,9 +120,9 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   console.log("● 手動標示：Ctrl 點兩側邊線指定寬度");
   await open("manual-width");
   r = await page.evaluate(async H => {
-    const ev = { ctrlKey: true };
-    ductClick({ x: 300 * SCALE, y: (H - 288) * SCALE }, ev);     // 第一條：內部細線
-    ductClick({ x: 300 * SCALE, y: (H - 318) * SCALE }, ev);     // 第二條：另一條內部細線（刻意指定 600）
+    S.dpick = "pts";
+    widthPick({ x: 300 * SCALE, y: (H - 288) * SCALE });          // 第一條：內部細線
+    widthPick({ x: 300 * SCALE, y: (H - 318) * SCALE });          // 第二條：另一條內部細線（刻意指定 600）
     const w = $("ductW").value; $("ductH").value = "300";
     ductClick({ x: 120 * SCALE, y: (H - 303) * SCALE }, {}); ductClick({ x: 480 * SCALE, y: (H - 303) * SCALE }, {});
     await commitDuct(); const d = S.ducts[0];
@@ -130,6 +130,22 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   }, H);
   check("寬度依指定的兩條線為 600，尺寸 600x300", r.w === "600" && r.wd === 600 && r.size === "600x300", r);
   check("邊線線型取指定的線（0.4pt）、仍記為手動", r.sty && r.sty.startsWith("S|0.4") && r.how === "manual", r);
+
+  console.log("● Ctrl 點兩條邊線：真實滑鼠操作（手動、自動、Mac 右鍵）");
+  const scr = (x, y) => page.evaluate(([x, y, H]) => { const r = view.getBoundingClientRect(); return { x: r.left + S.ox + x * SCALE * S.vs, y: r.top + S.oy + (H - y) * SCALE * S.vs }; }, [x, y, H]);
+  const ctrlTwo = async (button) => {
+    await page.keyboard.down("Control");
+    for (const y of [277.5, 322.5]) { const q = await scr(300, y); await page.mouse.click(q.x, q.y, { button }); await page.waitForTimeout(100); }
+    await page.keyboard.up("Control");
+  };
+  for (const [mode, button, label] of [["pts", "left", "手動"], ["seg", "left", "自動"], ["pts", "right", "Mac（Ctrl＋點擊＝右鍵）"]]) {
+    await open("manual-width");
+    await page.evaluate(m => { S.dpick = m; setMode("duct"); }, mode);
+    await ctrlTwo(button);
+    r = await page.evaluate(H => ({ w: $("ductW").value, wref: S.wref && Math.round(S.wref.wd * 20), pend: S.pending && S.pending.pts.map(q => +(H - q[1] / SCALE).toFixed(1)) }), H);
+    if (mode === "seg") check(`${label}：建立中心線預覽 y=300、寬度 900`, r.w === "900" && r.pend && r.pend.every(y => near(y, 300, 0.3)), r);
+    else check(`${label}：指定寬度 900`, r.w === "900" && r.wref === 900, r);
+  }
 
   console.log("● 穿管處有重複線段仍可接續");
   await open("passthru-dup");
