@@ -1,0 +1,15 @@
+{
+  "name": "pdf-drawing-count-tests",
+  "version": "1.0.0",
+  "description": "回歸測試（Playwright）",
+  "scripts": {
+    "fixtures": "node make-pdfs.js",
+    "test": "node make-pdfs.js && node regress.js"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
+    "playwright": "^1.56.1"
+  },
+  "private": true
+}

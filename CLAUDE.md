@@ -76,16 +76,24 @@
 ## 7. 測試狀態與待辦
 
 ### 測試方式
-以 Playwright（headless Chromium）開啟 HTML、載入測試 PDF（由 pdf-lib 腳本產生），在頁面內呼叫內部函式驗證。測試資料夾原在 `/home/claude/t/`（**不會隨檔案交接**，需要時重建）。重要測試情境：
-- 彎頭（含/不含接合線）、三通、大小頭、45° 偏移、分節彎頭、穿管、同線型文字與底圖干擾、手動畫短中心線、高密度底圖（25 萬線段）效能、寬度提醒、範本匯出驗算（SA 1750×800 L=3.854 → 20#、22.6 m²、243.18 ft²、11.58 張）。
+測試在 `tests/`（Playwright＋headless Chromium）：
+```
+cd tests && npm install && npm test     # 產生測試 PDF（make-pdfs.js）並執行 regress.js
+```
+- CDN 函式庫（pdf.js、pdf-lib）在測試中改由 `tests/node_modules` 提供，離線可跑。
+- 雲端環境請設 `CHROMIUM=/opt/pw-browsers/chromium-*/chrome-linux/chrome`，不要執行 `playwright install`。
+- 測試 PDF 比例 1 pt = 20 mm；在頁面內直接呼叫 `pickClick`→`commitDuct`、`ductClick`、`ductGeo`、`widthCheck`、`ductCalc` 驗證。
+- `tests/`、`CLAUDE.md` 已列入 `.vercelignore`，不會部署。
 
 ### v4.11 驗證進度
 - ✅ 新標示流程、Esc、端點／中點吸附、自動寬度（含三通開口處多點量測）、進階設定、上色預設開啟、向量比對線型篩選、範本核對。
 - ✅ 已跑：基本清點／圖層／文字、範本匯出、線型鎖定等。
-- ⏳ **未跑完的舊回歸測試**：點選線段、接合線、無接合線、穿管、寬度提醒、底圖干擾、分節彎頭、45°（需改成新流程：自動標示要先 `pickClick` 再 `commitDuct()`；尺寸改設 `#ductW`、`#ductH`）。其中點選測試報錯「Cannot read properties of null (reading 'hidden')」，推測是測試程式引用已移除的舊元件（`#snapRow` 等），需確認不是工具問題。
+- ✅ 回歸測試已補齊並全數通過（33 項）：直管、寬度提醒與寬高對調、彎頭（有／無接合線）、穿管自動接續、三通、底圖干擾、45° 彎頭、手動標示、計算書數值。
+- ✅ 先前「Cannot read properties of null (reading 'hidden')」確認是舊測試引用已移除元件；靜態檢查程式中引用的元件 ID 全都存在。
+- ⏳ 尚未自動化：分節彎頭與上色結果、大小頭、高密度底圖效能、清點（向量比對）流程。
 
 ### 功能待辦（依優先）
-1. 跑完上述回歸測試並修正。
+1. 補上分節彎頭／上色、大小頭、清點流程的自動化測試。
 2. 以實際圖面驗證裝修、消防、水電等其他行業。
 3. 單檔拆模組（見第 8 節）。
 4. 訂閱系統（Supabase Auth、綠界或藍新金流、方案控管）。
