@@ -117,6 +117,20 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   r = await page.evaluate(() => S.ducts[0].edgeSty);
   check("邊線線型取風管邊線（0.7pt）", r && r.startsWith("S|0.7"), r);
 
+  console.log("● 手動標示：Ctrl 點兩側邊線指定寬度");
+  await open("manual-width");
+  r = await page.evaluate(async H => {
+    const ev = { ctrlKey: true };
+    ductClick({ x: 300 * SCALE, y: (H - 288) * SCALE }, ev);     // 第一條：內部細線
+    ductClick({ x: 300 * SCALE, y: (H - 318) * SCALE }, ev);     // 第二條：另一條內部細線（刻意指定 600）
+    const w = $("ductW").value; $("ductH").value = "300";
+    ductClick({ x: 120 * SCALE, y: (H - 303) * SCALE }, {}); ductClick({ x: 480 * SCALE, y: (H - 303) * SCALE }, {});
+    await commitDuct(); const d = S.ducts[0];
+    return { w, wd: Math.round(d.wd * mmPerPt(0)), sty: d.edgeSty, size: d.size, how: d.how };
+  }, H);
+  check("寬度依指定的兩條線為 600，尺寸 600x300", r.w === "600" && r.wd === 600 && r.size === "600x300", r);
+  check("邊線線型取指定的線（0.4pt）、仍記為手動", r.sty && r.sty.startsWith("S|0.4") && r.how === "manual", r);
+
   console.log("● 穿管處有重複線段仍可接續");
   await open("passthru-dup");
   r = await autoPick(150, 280, ["", "400"]); D = await ducts();
@@ -181,6 +195,29 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("分節彎頭的中間節有上色", filled.hit[2] && filled.hit[3] && filled.hit[4], filled.hit.slice(2, 5));
   check("風管外側與斜切外角沒有上色", !filled.hit[5] && !filled.hit[6] && !filled.hit[7], filled.hit.slice(5, 8));
   check("內角外側沒有上色", !filled.hit[8], filled.hit[8]);
+
+  console.log("● 圓弧彎頭（接合處缺口）上色：自動＋手動");
+  const fillHit = pts => page.evaluate(({ H, pts }) => {
+    const ix = S.vec.get(0); FILLS.clear(); const F = S.ducts.map(d => fillOf(d, ix));
+    const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+    return pts.map(([x, y]) => F.some(f => f && f.polys.some(P => inPoly(x * SCALE, (H - y) * SCALE, P))));
+  }, { H, pts });
+  // 檢查點：彎頭內部 2 點、外弧外側轉角 2 點、水平管下緣外 1 點、垂直管左緣外 1 點
+  const EG = [[258, 295], [265, 288], [243, 283], [247, 286], [300, 270], [230, 320]];
+  await open("elbow-gap");
+  await autoPick(240, 450, ["", "300"]);
+  await autoPick(450, 280, ["", "300"]);
+  let fh = await fillHit(EG); D = await ducts();
+  check("自動：兩段都判定彎頭", D.length === 2 && D.every(d => d.kind.includes("彎頭")), D.map(d => d.kind));
+  check("自動：彎頭內部有上色", fh[0] && fh[1], fh);
+  check("自動：外弧外側、管外沒有上色", !fh[2] && !fh[3] && !fh[4] && !fh[5], fh);
+  await open("elbow-gap");
+  await autoPick(240, 450, ["", "300"]);
+  await manual([[560, 290], [285, 290]], ["400", "300"]);
+  fh = await fillHit(EG); D = await ducts();
+  check("手動（中心線沒畫到轉角）：寬度 400、判定彎頭", D[1] && near(D[1].wdmm, 400, 5) && D[1].kind.includes("彎頭"), D[1] && [D[1].wdmm, D[1].kind]);
+  check("手動：彎頭內部有上色", fh[0] && fh[1], fh);
+  check("手動：外弧外側、管外沒有上色", !fh[2] && !fh[3] && !fh[4] && !fh[5], fh);
 
   console.log("● 清點：向量比對");
   await open("count");
