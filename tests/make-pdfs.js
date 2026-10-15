@@ -66,5 +66,31 @@ async function make(name, draw) {
     L(400 + h * Math.tan(Math.PI / 8), 300 - h, ex + h * s, ey - h * s);
     L(400 - h * Math.tan(Math.PI / 8), 300 + h, ex - h * s, ey + h * s);
   });
+  // 分節彎頭：水平 800 寬接垂直 800 寬，外角斜切，中間兩節以接合線分隔
+  await make("seg-elbow", L => {
+    L(100, 280, 480, 280); L(480, 280, 500, 300); L(500, 300, 500, 600);   // 外側邊線（含斜切）
+    L(100, 320, 460, 320); L(460, 320, 460, 600);                         // 內側邊線
+    L(440, 280, 440, 320);                                                // 彎頭起點接合線
+    L(460, 320, 490, 290);                                                // 中間節接合線
+    L(460, 340, 500, 340);                                                // 彎頭終點接合線
+  });
+
+  // 清點：不對稱符號（矩形＋對角線＋短線）。藍色 6 個正向＋3 個轉 90°；灰色同形 4 個（不同線型）；三角形 5 個
+  await make("count", (L, pg) => {
+    const SYM = { thickness: 0.6, color: rgb(0.8, 0.1, 0.1) };
+    const GRAY = { thickness: 0.25, color: rgb(0.5, 0.5, 0.5) };
+    const sym = (x, y, rot, o) => {
+      const P = (dx, dy) => rot ? [x - dy, y + dx] : [x + dx, y + dy];
+      const seg = (a, b) => { const p = P(...a), q = P(...b); L(p[0], p[1], q[0], q[1], o); };
+      seg([0, 0], [24, 0]); seg([24, 0], [24, 12]); seg([24, 12], [0, 12]); seg([0, 12], [0, 0]);
+      seg([0, 0], [24, 12]); seg([24, 12], [30, 18]);
+    };
+    [[100, 550], [250, 550], [400, 550], [550, 550], [100, 420], [250, 420]].forEach(([x, y]) => sym(x, y, false, SYM));
+    [[450, 400], [600, 400], [750, 400]].forEach(([x, y]) => sym(x, y, true, SYM));
+    [[100, 250], [250, 250], [400, 250], [550, 250]].forEach(([x, y]) => sym(x, y, false, GRAY));
+    for (let i = 0; i < 5; i++) { const x = 100 + i * 120, y = 120; L(x, y, x + 20, y, SYM); L(x + 20, y, x + 10, y + 18, SYM); L(x + 10, y + 18, x, y, SYM); }
+    for (let i = 0; i < 4; i++) pg.drawText("FCU-1", { x: 700 + (i % 2) * 120, y: 250 - Math.floor(i / 2) * 60, size: 10 });
+    pg.drawText("FCU-2", { x: 700, y: 120, size: 10 });
+  });
   console.log("fixtures ok");
 })();

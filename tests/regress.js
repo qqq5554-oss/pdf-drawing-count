@@ -140,6 +140,51 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("建立一支 3 點風管", D.length === 1 && D[0].pts.length === 3, D[0] && D[0].pts);
   check("吸附到端點 (100,280)? 否則保持點選位置", D[0] && near(D[0].pts[0][0], 100.5, 0.6) || near(D[0].pts[0][0], 100, 0.01), D[0] && D[0].pts[0]);
 
+  console.log("● 分節彎頭上色");
+  await open("seg-elbow");
+  const s1 = await autoPick(200, 280, ["", "400"]);
+  const s2 = await autoPick(460, 500, ["", "400"]);
+  D = await ducts();
+  check("兩段寬度 800", s1 && s1.wAuto === "800" && s2 && s2.wAuto === "800", [s1, s2]);
+  check("判定彎頭", D.length === 2 && D.every(d => d.kind.includes("彎頭")), D.map(d => d.kind));
+  // 檢查點是否落在任一段的色塊內（PDF 座標）
+  const filled = await page.evaluate(({ H, pts }) => {
+    const ix = S.vec.get(0), F = S.ducts.map(d => fillOf(d, ix));
+    const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+    return { ok: F.every(f => f && f.polys.length), hit: pts.map(([x, y]) => F.some(f => f && f.polys.some(P => inPoly(x * SCALE, (H - y) * SCALE, P)))) };
+  }, { H, pts: [[300, 300], [480, 500], [450, 300], [478, 300], [475, 330], [300, 270], [300, 330], [498, 283], [440, 330]] });
+  check("兩段都產生色塊", filled.ok, filled);
+  check("直管段內部有上色", filled.hit[0] && filled.hit[1], filled.hit);
+  check("分節彎頭的中間節有上色", filled.hit[2] && filled.hit[3] && filled.hit[4], filled.hit.slice(2, 5));
+  check("風管外側與斜切外角沒有上色", !filled.hit[5] && !filled.hit[6] && !filled.hit[7], filled.hit.slice(5, 8));
+  check("內角外側沒有上色", !filled.hit[8], filled.hit[8]);
+
+  console.log("● 清點：向量比對");
+  await open("count");
+  const tplRect = { x: 95, y: H - 573, w: 40, h: 28 };   // 框住第一個符號（PDF pt，左上原點）
+  const cnt = async (styLock, rot) => page.evaluate(async ({ rect, styLock, rot }) => {
+    S.cats = []; const c = addCategory("測試"); c.styLock = styLock; c.rot = rot;
+    await setTemplate({ x: rect.x * SCALE, y: rect.y * SCALE, w: rect.w * SCALE, h: rect.h * SCALE });
+    $("scope").value = "page";
+    await runSearch();
+    return { n: countAll(c), segs: c.vt && c.vt.segs.length, method: c.method };
+  }, { rect: tplRect, styLock, rot });
+  r = await cnt(true, true);
+  check("樣板取得 6 條線段", r.segs === 6 && r.method === "vec", r);
+  check("限相同線型＋旋轉：找到 9 個（含 3 個轉向）", r.n === 9, r);
+  r = await cnt(true, false);
+  check("不允許旋轉：找到 6 個", r.n === 6, r);
+  r = await cnt(false, true);
+  check("不限線型：灰色同形也找到，共 13 個", r.n === 13, r);
+
+  console.log("● 清點：文字計數");
+  r = await page.evaluate(async () => {
+    S.cats = []; const c = addCategory("FCU"); c.method = "txt"; c.txt = { pat: "FCU-1", whole: true };
+    $("scope").value = "page"; await runSearch(); const a = countAll(c);
+    c.txt = { pat: "FCU-*", whole: true }; await runSearch(); return [a, countAll(c)];
+  });
+  check("「FCU-1」找到 4 個，「FCU-*」找到 5 個", r[0] === 4 && r[1] === 5, r);
+
   console.log("● 計算書數值（SA 1750×800 L=3.854）");
   r = await page.evaluate(() => {
     const k = 20, L = 3854 / k * SCALE;
