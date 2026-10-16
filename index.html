@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.18</title>
+<title>圖面符號清點 v4.19</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.18</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.19</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -3677,10 +3677,12 @@ function computeFill(d, ix) {
   const Wc = d.wd && Math.abs(d.wd - W) < W * 0.4 ? d.wd : W * 0.98;
   // 手動畫的中心線常比實際風管短：沿兩端方向找這支風管自己的邊線延伸到哪裡（最多 3 倍管寬）
   const endX = [0, 0], nP = g.P.length;
-  if (!d.single) for (const end of [0, 1]) {
+  // 只用於手動標示（自動標示的中心線本來就涵蓋兩側邊線都存在的範圍）；兩側邊線都往前延伸才算，取較短者，
+  // 避免管道間框線、牆線等剛好與單側邊線同一直線時，色塊超出標示終點
+  if (!d.single && d.how !== "auto") for (const end of [0, 1]) {
     const Ep = end ? g.P[nP - 1] : g.P[0], Pn = end ? g.P[nP - 2] : g.P[1];
     const dx = Ep[0] - Pn[0], dy = Ep[1] - Pn[1], l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l, hh = Wc / 2, tl = Math.max(0.5, Wc * 0.06), r3 = W * 3;
-    let best = 0;
+    const best2 = [0, 0];
     for (const i of Vec.segsIn(ix, Ep[0] - r3, Ep[1] - r3, Ep[0] + r3, Ep[1] + r3)) {
       const px = ix.segs[4 * i], py = ix.segs[4 * i + 1], qx = ix.segs[4 * i + 2], qy = ix.segs[4 * i + 3], sl = Math.hypot(qx - px, qy - py); if (sl < 1e-6) continue;
       if (Math.abs(ux * (qy - py) / sl - uy * (qx - px) / sl) > 0.02) continue;
@@ -3688,8 +3690,9 @@ function computeFill(d, ix) {
       if (Math.sign(o1) !== Math.sign(o2) || Math.abs(Math.abs(o1) - hh) > tl || Math.abs(Math.abs(o2) - hh) > tl) continue;
       const tp = (px - Ep[0]) * ux + (py - Ep[1]) * uy, tq = (qx - Ep[0]) * ux + (qy - Ep[1]) * uy;
       if (Math.min(tp, tq) > tl) continue;                       // 必須從端點附近開始，往前延伸
-      best = Math.max(best, Math.min(Math.max(tp, tq), r3));
+      const sd = o1 > 0 ? 0 : 1; best2[sd] = Math.max(best2[sd], Math.min(Math.max(tp, tq), r3));
     }
+    const best = Math.min(best2[0], best2[1]);
     endX[end] = best > tl ? best : 0;
   }
   // 上色用的路徑：兩端延伸到「接頭延伸」與「邊線實際結束處」較遠者

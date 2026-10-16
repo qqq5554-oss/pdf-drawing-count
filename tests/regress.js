@@ -189,6 +189,14 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   D = await ducts();
   check("Ctrl+Z 復原為 8 m", D[0] && near(D[0].L, 8, 0.1), D[0] && D[0].L);
 
+  console.log("● 風管接到管道間：上色不超過標示終點");
+  for (const how of ["auto", "manual"]) {
+    await open("shaft");
+    if (how === "auto") await autoPick(280, 250, ["", "400"]); else await manual([[300, 120], [300, 400]], ["800", "400"]);
+    fh = await fillHit([[300, 300], [300, 390], [300, 420], [300, 460]]); D = await ducts();
+    check(`${how === "auto" ? "自動" : "手動"}：管內有上色、管道間內（終點之後）沒有上色`, fh[0] && fh[1] && !fh[2] && !fh[3], { fh, pts: D[0] && D[0].pts });
+  }
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);
