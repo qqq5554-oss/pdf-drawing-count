@@ -205,6 +205,20 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   const sm = D.find(d => d.size.startsWith("300"));
   check("細管兩端都沒有接頭延伸、長度 4 m", sm && sm.kind.every(k => !k) && near(sm.L, 4, 0.05), sm && [sm.kind, sm.L]);
 
+  console.log("● 相鄰兩支風管：點內側邊線不會量到中間的空隙");
+  for (const x of [217.5, 222]) {
+    await open("adjacent");
+    r = await autoPick(x, 300, ["", "300"]);
+    check(`點 x=${x} 的邊線：寬度 350（不是空隙 90）`, r && r.wAuto === "350", r);
+  }
+
+  console.log("● 三通分支（主管邊線連續）：兩側邊線都不會跨到上方立管");
+  for (const x of [240, 260]) {
+    await open("tee-continuous");
+    await autoPick(x, 200, ["", "250"]); D = await ducts();
+    check(`點 x=${x} 的邊線：分支只到主管（y ≤ 280）`, D[0] && Math.max(...D[0].pts.map(p => p[1])) < 282, D[0] && D[0].pts);
+  }
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);

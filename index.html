@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.20</title>
+<title>圖面符號清點 v4.21</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.20</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.21</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -1013,24 +1013,33 @@ const Vec = (() => {
       const [a, b] = uniq.map(([, o]) => { const vx = o[0] - end[0], vy = o[1] - end[1], l = Math.hypot(vx, vy) || 1; return [vx / l, vy / l]; });
       return a[0] * b[0] + a[1] * b[1] < -0.99;
     };
-    // 缺口 p→q 中間是否有其他管路邊線橫穿（不含兩端）
+    // 缺口 p→q 中間橫穿的其他管路邊線位置（含起點正好碰到的，不含終點）
     const crossed = (p, q) => {
-      const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); if (L < 1e-6) return false;
+      const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); if (L < 1e-6) return 0;
+      const ts = [];
       for (const i of segsIn(ix, Math.min(p[0], q[0]) - 1, Math.min(p[1], q[1]) - 1, Math.max(p[0], q[0]) + 1, Math.max(p[1], q[1]) + 1)) {
         if (used.has(i) || !okL(ix, i, mask) || (ok && !ok(i))) continue;       // 只看可接續的線型（管路邊線），忽略引線與底圖
         const [a, b] = E(i), ex = b[0] - a[0], ey = b[1] - a[1], den = dx * ey - dy * ex; if (Math.abs(den) < 1e-9) continue;
         const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den, s2 = ((a[0] - p[0]) * dy - (a[1] - p[1]) * dx) / den;
-        if (t * L > tol && t * L < L - tol && s2 > 0.01 && s2 < 0.99) return true;
+        if (t * L > -tol && t * L < L - tol && s2 > 0.01 && s2 < 0.99) ts.push(Math.max(0, t * L));   // 含末端正好碰到的那條
       }
-      return false;
+      return ts.sort((a, b) => a - b);
     };
     // 盡頭接著轉角或另一條線的端點：可能是主管的三通開口（缺口中間沒有線橫穿 → 接續），
     // 也可能是分支接到主管（缺口會穿過主管邊線 → 不接續，避免接到同一直線上的另一支管）
     const tryBridge = (uniq, end, prev) => {
       const br = bridge(end, prev); if (!br) return null;
-      if (freeEnd(uniq, end, prev)) return br;
       const ux = end[0] - prev[0], uy = end[1] - prev[1], l = Math.hypot(ux, uy) || 1;
-      return crossed(end, [end[0] + ux / l * br.tn, end[1] + uy / l * br.tn]) ? null : br;
+      const ts = crossed(end, [end[0] + ux / l * br.tn, end[1] + uy / l * br.tn]), n = ts.length;
+      // 穿管：缺口中間最多穿過一支管（兩條同線型邊線），且越過後風管緊接著繼續
+      // （越過最後一條後的空白不超過穿越寬度的一半）；否則代表跨到了另一區的管子
+      if (freeEnd(uniq, end, prev)) {
+        if (n > 2) return null;
+        const span = n > 1 ? ts[n - 1] - ts[0] : ts[0];   // 穿越那支管的寬度
+        if (n && br.tn - ts[n - 1] > Math.max(tol * 2, span * 0.5)) return null;
+        return br;
+      }
+      return n ? null : br;
     };
     for (const atEnd of [true, false]) {
       for (let step = 0; step < 5000; step++) {
@@ -1100,12 +1109,16 @@ const Vec = (() => {
           groups.set(key, g);
         }
       }
-    let best = null;
-    for (const g of groups.values()) {
-      g.d /= g.n;
-      if (Math.min(g.cov, g.hi - g.lo) < L * 0.3) continue;
-      if (!best || Math.abs(g.d) < Math.abs(best.d)) best = g;
-    }
+    // 另一側邊線的選擇：
+    // 1. 覆蓋率：須涵蓋點選邊線相當長度，且不低於最佳覆蓋的 0.6 倍（排除旁邊零碎的同線型短線）
+    // 2. 兩側各取最近者；若較近一側很窄（< 2 倍最小寬，約 160 mm）且不到另一側的 0.4 倍，多半是兩支相鄰風管之間的空隙，改取另一側
+    const gs = [...groups.values()]; gs.forEach(g => { g.d /= g.n; g.c = Math.min(g.cov, g.hi - g.lo); });
+    const ok2 = gs.filter(g => g.c >= L * 0.3), maxC = Math.max(0, ...ok2.map(g => g.c));
+    const keep = ok2.filter(g => g.c >= maxC * 0.6);
+    const near = sgn => keep.filter(g => Math.sign(g.d) === sgn).sort((p, q) => Math.abs(p.d) - Math.abs(q.d))[0] || null;
+    const P = near(1), N = near(-1);
+    let best = P && N ? (Math.abs(P.d) <= Math.abs(N.d) ? P : N) : (P || N);
+    if (P && N) { const o = best === P ? N : P; if (Math.abs(best.d) < Math.abs(o.d) * 0.4 && Math.abs(best.d) < wmin * 2) best = o; }
     if (!best) return null;
     const h = best.d / 2;
     return { pts: [[a[0] + ux * best.lo + nx * h, a[1] + uy * best.lo + ny * h], [a[0] + ux * best.hi + nx * h, a[1] + uy * best.hi + ny * h]], w: Math.abs(best.d), partner: best.segs };
