@@ -257,6 +257,24 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   await page.click("#tallyBody .szt");
   r = await page.evaluate(() => document.querySelectorAll("#tallyBody tr.szrow").length);
   check("再點一下收合", r === 0, r);
+
+  console.log("● 本頁統計表（放到圖面、匯出 PDF）");
+  r = await page.evaluate(() => { const c = S.cats[0]; c.num.on = false; c.unit = "組"; S.legOpt = { sizes: true, ducts: true }; S.legends[0] = { x: 100, y: 100 };
+    return legendRows(0).map(x => [x.t, x.name, x.n, x.unit].filter(v => v !== undefined).join(" ")); });
+  check("統計表內容：類別、單位、尺寸明細、風管長度", JSON.stringify(r) === JSON.stringify(["title 統計表　P1", "cat 手動風門 4 組", "sub 400×250 1 組", "sub 800×400 2 組", "sub 不在風管上 1 組", "duct SA 風管（送風） 15.40 m"]), r);
+  r = await page.evaluate(() => { S.legOpt.sizes = false; S.legOpt.ducts = false; const n = legendRows(0).length; S.legOpt = { sizes: true, ducts: true }; return n; });
+  check("取消尺寸明細與風管後只剩類別", r === 2, r);
+  r = await page.evaluate(async () => {
+    let blob = null; const orig = window.download; window.download = b => { blob = b; };
+    try { await exportPdf(); } finally { window.download = orig; }
+    const doc = await PDFLib.PDFDocument.load(new Uint8Array(await blob.arrayBuffer())), an = doc.getPage(0).node.Annots(); let n = 0, txt = "";
+    if (an) for (let i = 0; i < an.size(); i++) { const d = an.lookup(i), nm = d.get(PDFLib.PDFName.of("NM")); if (nm && nm.decodeText().startsWith("CNTL_LEGEND_")) { n++; txt = d.get(PDFLib.PDFName.of("Contents")).decodeText(); } }
+    return { n, txt };
+  });
+  check("匯出 PDF 含 1 個統計表註解（內容含類別與單位）", r.n === 1 && r.txt.includes("手動風門 4 組") && r.txt.includes("15.40 m"), r);
+  r = await page.evaluate(() => { const B = legendBox(0); return !!B && !!hitLegend({ x: B.x + 5, y: B.y + 5 }); });
+  check("統計表可點選拖曳", r, r);
+  await page.evaluate(() => { delete S.legends[0]; });
   r = await page.evaluate(async () => {
     const got = {}; const orig = window.download; window.download = (blob, name) => { got[name.endsWith(".csv") ? "csv" : "xlsx"] = blob; };
     try { exportCsv(); exportXlsx(); } finally { window.download = orig; }

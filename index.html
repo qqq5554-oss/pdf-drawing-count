@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.24</title>
+<title>圖面符號清點 v4.25</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -198,6 +198,9 @@ details summary{cursor:pointer;font-size:13px;font-weight:700}
 .txtlist{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:6px;font-size:12.5px;color:var(--muted)}
 .txtlist b{color:var(--ink);font-weight:500}
 .txtlist .lbl{flex-basis:100%;font-size:11.5px;color:var(--muted)}
+.legbtns{display:flex;gap:6px;margin-bottom:8px}.legbtns button{flex:1}
+#legUnits .lbl{font-size:11.5px;color:var(--muted);margin:8px 0 4px}
+.legu{display:flex;align-items:center;gap:8px;margin:3px 0}.legu .sw{width:14px;height:10px;border-radius:2px;flex:none}.legu .tx{flex:1;font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.legu input.txt{width:72px;flex:none}
 .szt{margin-right:2px;width:18px;min-width:18px;padding:0;flex:none}
 .hasSzt{display:flex;align-items:center}
 .hasSzt .nm{flex:1;min-width:0}
@@ -245,7 +248,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.24</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.25</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -280,6 +283,15 @@ details.adv .hint{margin-top:4px}
         <tfoot><tr><td></td><td class="lbl">合計</td><td class="num" id="sumPage">0</td><td class="num sub" id="sumAll">0</td><td></td></tr></tfoot>
       </table>
       <button class="addcat" id="addCat">新增類別</button>
+    </section>
+
+    <section class="sec" id="legSec">
+      <h2>本頁統計表（放到圖面）</h2>
+      <div class="legbtns"><button id="legPlace">放到本頁</button><button id="legRemove">從本頁移除</button></div>
+      <label class="switch"><input type="checkbox" id="legSizes" checked> 含風管尺寸明細</label>
+      <label class="switch"><input type="checkbox" id="legDucts" checked> 含風管（依系統長度）</label>
+      <div id="legUnits"></div>
+      <p class="hint">統計表會顯示本頁各類別的顏色、數量與單位，放到圖面後可直接拖曳移動；匯出 PDF 時成為一個註解。</p>
     </section>
 
     <section class="sec">
@@ -1425,6 +1437,7 @@ const S = {
   cats: [], active: null, pageNames: [], zones: {}, zoneVer: 0, showPath: true, labelPt: "auto", mergeNum: true, mode: "pan", vs: 1, ox: 0, oy: 0, undo: [], busy: false, imported: new Set(),
   drag: null, hover: null, sel: null, space: false, pageProxy: null, hi: null, edHover: -1,
   texts: new Map(), scaleHint: {}, layers: [], layerMap: new Map(), layerVis: [], occ: null, review: null, tab: "count",
+  legends: {}, legOpt: { sizes: true, ducts: true },
   ducts: [], ductSeq: 0, scales: {}, dpick: "seg", pick: null, pickCache: null, pending: null, styLocks: [], styVer: 0, styHover: null, styShown: "", draft: null, cursor: null, selDuct: null, cal: null, dsys: "SA", dc: null, dirty: false
 };
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -1452,7 +1465,7 @@ async function openFile(file) {
     $("fileName").textContent = file.name;
     S.cats = []; S.active = null; S.undo = []; S.zones = {}; S.zoneVer++; S.vp1 = {}; S.vec = new Map(); S.imported = new Set();
     S.styLocks = []; S.styVer++; S.styHover = null; S.pickCache = null;
-    S.texts = new Map(); S.scaleHint = {}; S.ducts = []; S.ductSeq = 0; S.scales = {}; S.draft = null; S.selDuct = null; S.cal = null; S.review = null; S.dirty = false;
+    S.texts = new Map(); S.scaleHint = {}; S.legends = {}; S.ducts = []; S.ductSeq = 0; S.scales = {}; S.draft = null; S.selDuct = null; S.cal = null; S.review = null; S.dirty = false;
     readLayers(); S.occ = null; S.layerVis = S.layers.map(() => true);
     if (S.layers.length) try {
       S.occ = await S.pdf.getOptionalContentConfig();
@@ -1763,7 +1776,8 @@ function sizeTags(p) {
     for (const m of marksOf(c, p)) {
       const text = markSize(m, p); if (!text) continue;
       const w = (textEm(text) + 0.6) * fs, h = fs * 1.45;
-      out.push({ x: m.x + m.w / 2 - w / 2, y: m.y + m.h + fs * 0.25, w, h, text, fs, fsPt, c, m });
+      const above = c.num.on;   // 有編號時編號標籤在下方，尺寸改放上方避免重疊
+      out.push({ x: m.x + m.w / 2 - w / 2, y: above ? m.y - h - fs * 0.25 : m.y + m.h + fs * 0.25, w, h, text, fs, fsPt, c, m, above });
     }
   }
   return out;
@@ -1920,6 +1934,120 @@ function layoutLabels(p) {
     }
   }
   return out;
+}
+
+/* ---------- 本頁統計表（可放到圖面、匯出為 PDF 註解）---------- */
+// 列：title 標題、cat 類別、sub 尺寸明細、duct 風管（依系統長度）
+function legendRows(p) {
+  const rows = [{ t: "title", name: `統計表　${pageName(p)}` }];
+  for (const c of S.cats) {
+    if (!c.visible) continue;
+    const ms = marksOf(c, p); if (!ms.length) continue;
+    rows.push({ t: "cat", color: c.color, name: c.name, n: String(ms.length), unit: c.unit || "個" });
+    if (S.legOpt.sizes && S.ducts.some(d => d.page === p)) {
+      const map = new Map(); let on = 0;
+      for (const m of ms) { const z = markSize(m, p); if (z) on++; const k = z || "不在風管上"; map.set(k, (map.get(k) || 0) + 1); }
+      if (on) [...map.entries()].sort((a, b) => a[0] === "不在風管上" ? 1 : b[0] === "不在風管上" ? -1 : a[0].localeCompare(b[0], "zh-Hant", { numeric: true }))
+        .forEach(([k, n]) => rows.push({ t: "sub", name: k, n: String(n), unit: c.unit || "個" }));
+    }
+  }
+  if (S.legOpt.ducts) {
+    const by = new Map();
+    for (const d of S.ducts) { if (d.page !== p) continue; const L = ductLenM(d); if (L == null) continue; by.set(d.sys || "?", (by.get(d.sys || "?") || 0) + L); }
+    for (const sy of S.dc.systems) if (by.has(sy.name)) rows.push({ t: "duct", color: sy.color, name: `${sy.name} 風管${sy.desc ? "（" + sy.desc.replace(/^[A-Za-z ]+/, "").trim() + "）" : ""}`, n: by.get(sy.name).toFixed(2), unit: "m" });
+    if (by.has("?")) rows.push({ t: "duct", color: "#8A939C", name: "未分系統 風管", n: by.get("?").toFixed(2), unit: "m" });
+  }
+  return rows;
+}
+const emW = t => [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : (/[A-Z0-9#]/.test(ch) ? 0.62 : 0.52)), 0);
+// 版面（分析影像 px）：字級依頁面大小（約短邊 / 110，5～14pt）
+function legendBox(p) {
+  const pos = S.legends[p]; if (!pos) return null;
+  const rows = legendRows(p); if (rows.length < 2) return null;
+  const v = S.vp1[p], fsPt = v ? Math.max(5, Math.min(14, Math.min(v.width, v.height) / 110)) : 8, fs = fsPt * SCALE;
+  const sw = fs * 1.3, pad = fs * 0.6, rh = fs * 1.7;
+  const nameW = Math.max(...rows.filter(r => r.t !== "title").map(r => emW(r.name) * fs + (r.t === "sub" ? fs * 1.2 : 0)));
+  const nW = Math.max(...rows.filter(r => r.n).map(r => emW(r.n) * fs)), uW = Math.max(...rows.filter(r => r.unit).map(r => emW(r.unit) * fs));
+  const titleW = emW(rows[0].name) * fs * 1.05;
+  const w = Math.max(titleW, sw + fs * 0.5 + nameW + fs * 1.2 + nW + fs * 0.5 + uW) + pad * 2;
+  const h = pad * 2 + rh * rows.length;
+  return { x: pos.x, y: pos.y, w, h, fs, fsPt, sw, pad, rh, rows, cols: { sw: pos.x + pad, name: pos.x + pad + sw + fs * 0.5, nR: pos.x + w - pad - uW - fs * 0.5, u: pos.x + w - pad - uW } };
+}
+function paintLegend() {
+  const B = legendBox(S.page); if (!B) return;
+  const { fs, pad, rh, sw, cols } = B;
+  vctx.fillStyle = "#fff"; vctx.fillRect(B.x, B.y, B.w, B.h);
+  vctx.strokeStyle = "#1D2A36"; vctx.lineWidth = Math.max(fs * 0.08, 1 / S.vs); vctx.strokeRect(B.x, B.y, B.w, B.h);
+  vctx.textBaseline = "middle";
+  B.rows.forEach((r, i) => {
+    const yc = B.y + pad + rh * i + rh / 2;
+    if (r.t === "title") {
+      vctx.font = `bold ${fs * 1.05}px Arial, "Noto Sans TC", sans-serif`; vctx.fillStyle = "#1D2A36"; vctx.textAlign = "left"; vctx.fillText(r.name, B.x + pad, yc);
+      vctx.beginPath(); vctx.moveTo(B.x, B.y + pad + rh - fs * 0.15); vctx.lineTo(B.x + B.w, B.y + pad + rh - fs * 0.15); vctx.lineWidth = Math.max(fs * 0.05, 0.6 / S.vs); vctx.stroke();
+      return;
+    }
+    if (r.color) {
+      const [r1, g1, b1] = hexRgb(r.color).map(v => Math.round(v * 255));
+      vctx.fillStyle = `rgba(${r1},${g1},${b1},${r.t === "duct" ? 0.45 : 0.38})`; vctx.fillRect(cols.sw, yc - fs * 0.45, sw, fs * 0.9);
+      vctx.strokeStyle = r.color; vctx.lineWidth = Math.max(fs * 0.08, 0.8 / S.vs); vctx.strokeRect(cols.sw, yc - fs * 0.45, sw, fs * 0.9);
+    }
+    vctx.font = `${r.t === "sub" ? "" : "600 "}${r.t === "sub" ? fs * 0.92 : fs}px Arial, "Noto Sans TC", sans-serif`;
+    vctx.fillStyle = r.t === "sub" ? "#4A5560" : "#111"; vctx.textAlign = "left"; vctx.fillText(r.name, cols.name + (r.t === "sub" ? fs * 1.2 : 0), yc);
+    vctx.textAlign = "right"; vctx.fillText(r.n, cols.nR, yc);
+    vctx.textAlign = "left"; vctx.fillText(r.unit, cols.u, yc);
+  });
+}
+const hitLegend = p => { const B = legendBox(S.page); return B && p.x >= B.x && p.x <= B.x + B.w && p.y >= B.y && p.y <= B.y + B.h ? B : null; };
+function renderLegendUI() {
+  const box = $("legUnits"); if (!box) return;
+  const on = !!S.legends[S.page];
+  $("legPlace").textContent = on ? "重設位置" : "放到本頁"; $("legRemove").disabled = !on;
+  $("legSizes").checked = S.legOpt.sizes; $("legDucts").checked = S.legOpt.ducts;
+  box.innerHTML = S.cats.length ? `<div class="lbl">單位</div>` + S.cats.map((c, i) => `<div class="legu"><span class="sw" style="background:${c.color}"></span><span class="tx">${c.name.replace(/</g, "&lt;")}</span><input class="txt" data-i="${i}" value="${(c.unit || "個").replace(/"/g, "&quot;")}" aria-label="${c.name} 單位"></div>`).join("") : "";
+  box.querySelectorAll("input[data-i]").forEach(el => el.addEventListener("input", e => { const c = S.cats[+e.target.dataset.i]; if (c) { c.unit = e.target.value.trim() || "個"; S.dirty = true; draw(); } }));
+}
+// 匯出：整張統計表為一個 FreeText 註解（自訂外觀：色塊、文字）
+function legendAnnot(ctx, vp, rot, B) {
+  const { PDFHexString, PDFString } = PDFLib;
+  labelAnnot(ctx, vp, rot, { x: 0, y: 0, w: 1, h: 1, text: "x", fs: 1, fsPt: 1, c: { color: "#000000", name: "" } });   // 確保字型已註冊
+  const P = (u, v) => vp.convertToPdfPoint(u / SCALE, v / SCALE);
+  const c1 = P(B.x, B.y), c2 = P(B.x + B.w, B.y + B.h);
+  const x0 = Math.min(c1[0], c2[0]), y0 = Math.min(c1[1], c2[1]), x1 = Math.max(c1[0], c2[0]), y1 = Math.max(c1[1], c2[1]);
+  const quad = (u, v, w, h) => { const a = P(u, v), b = P(u + w, v), c = P(u + w, v + h), d = P(u, v + h); return `${a[0].toFixed(3)} ${a[1].toFixed(3)} m ${b[0].toFixed(3)} ${b[1].toFixed(3)} l ${c[0].toFixed(3)} ${c[1].toFixed(3)} l ${d[0].toFixed(3)} ${d[1].toFixed(3)} l h`; };
+  const text = (t, u, vMid, fsPx, align) => {
+    const fsPt = fsPx / SCALE, cjk = /[^\x00-\xff]/.test(t), tw = (cjk ? [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.5), 0) : textEm(t)) * fsPt * SCALE;
+    const bu = (align === "right" ? u - tw : u) / SCALE, bv = (vMid + fsPx * 0.36) / SCALE;
+    const O = vp.convertToPdfPoint(bu, bv), X = vp.convertToPdfPoint(bu + 1, bv), Y = vp.convertToPdfPoint(bu, bv - 1);
+    const tm = [X[0] - O[0], X[1] - O[1], Y[0] - O[0], Y[1] - O[1], O[0], O[1]].map(v => (+v).toFixed(4)).join(" ");
+    const str = cjk ? "<" + [...t].map(ch => ch.charCodeAt(0).toString(16).padStart(4, "0")).join("") + ">" : "(" + t.replace(/[\\()]/g, m => "\\" + m) + ")";
+    return `BT /${cjk ? "F1" : "F0"} ${fsPt.toFixed(2)} Tf ${tm} Tm ${str} Tj ET`;
+  };
+  const { fs, pad, rh, sw, cols } = B, lw = Math.max(0.3, B.fsPt * 0.08), ops = [];
+  ops.push(`1 1 1 rg 0.114 0.165 0.212 RG ${lw.toFixed(2)} w ${quad(B.x, B.y, B.w, B.h)} B`);
+  B.rows.forEach((r, i) => {
+    const yc = B.y + pad + rh * i + rh / 2;
+    if (r.t === "title") {
+      ops.push("0.114 0.165 0.212 rg " + text(r.name, B.x + pad, yc, fs * 1.05));
+      const a = P(B.x, B.y + pad + rh - fs * 0.15), b = P(B.x + B.w, B.y + pad + rh - fs * 0.15);
+      ops.push(`${(lw * 0.6).toFixed(2)} w ${a[0].toFixed(3)} ${a[1].toFixed(3)} m ${b[0].toFixed(3)} ${b[1].toFixed(3)} l S`);
+      return;
+    }
+    if (r.color) {
+      const [cr, cg, cb] = hexRgb(r.color), al = r.t === "duct" ? 0.45 : 0.38, mix = v => (1 - al + al * v).toFixed(3);
+      ops.push(`${mix(cr)} ${mix(cg)} ${mix(cb)} rg ${cr.toFixed(3)} ${cg.toFixed(3)} ${cb.toFixed(3)} RG ${lw.toFixed(2)} w ${quad(cols.sw, yc - fs * 0.45, sw, fs * 0.9)} B`);
+    }
+    const f2 = r.t === "sub" ? fs * 0.92 : fs, g = r.t === "sub" ? "0.29 0.333 0.376 rg " : "0.067 0.067 0.067 rg ";
+    ops.push(g + text(r.name, cols.name + (r.t === "sub" ? fs * 1.2 : 0), yc, f2));
+    ops.push(g + text(r.n, cols.nR, yc, f2, "right"));
+    ops.push(g + text(r.unit, cols.u, yc, f2));
+  });
+  const ap = ctx.register(ctx.stream(ops.join("\n"), { Type: "XObject", Subtype: "Form", BBox: [x0, y0, x1, y1], Resources: { Font: { F0: FONT_REFS.ascii, F1: FONT_REFS.cjk } } }));
+  const plain = B.rows.filter(r => r.t !== "title").map(r => `${r.t === "sub" ? "　" : ""}${r.name} ${r.n} ${r.unit}`).join("\n");
+  return ctx.register(ctx.obj({
+    Type: "Annot", Subtype: "FreeText", Rect: [x0, y0, x1, y1], F: 4, BS: { W: lw }, Rotate: rot,
+    Contents: PDFHexString.fromText(B.rows[0].name + "\n" + plain), Subj: PDFHexString.fromText("統計表"),
+    T: PDFHexString.fromText("圖面清點"), NM: PDFString.of("CNTL_LEGEND_" + uid()), DA: PDFString.of("0 g /Helv 8 Tf"), AP: { N: ap }
+  }));
 }
 
 /* ---------- 類別與標記 ---------- */
@@ -2137,7 +2265,7 @@ function renderSearch() {
   }
   renderEditor(); renderReview();
 }
-function refreshAll() { renderTally(); renderSearch(); renderNum(); renderPages(); renderDuct(); renderLayers(); draw(); }
+function refreshAll() { renderLegendUI(); renderTally(); renderSearch(); renderNum(); renderPages(); renderDuct(); renderLayers(); draw(); }
 
 /* ---------- 模式 ---------- */
 const HINTS = {
@@ -2249,7 +2377,7 @@ function paint() {
   for (const T of sizeTags(S.page)) {
     // 畫面上至少維持約 10.5px 字高才看得清楚（匯出 PDF 仍依編號字級）
     const fs = Math.max(T.fs, 10.5 / S.vs), w = (textEm(T.text) + 0.6) * fs, h = fs * 1.45, m = T.m;
-    const x = m.x + m.w / 2 - w / 2, y = m.y + m.h + fs * 0.25;
+    const x = m.x + m.w / 2 - w / 2, y = T.above ? m.y - h - fs * 0.25 : m.y + m.h + fs * 0.25;
     vctx.fillStyle = "rgba(255,255,255,.92)"; vctx.fillRect(x, y, w, h);
     vctx.strokeStyle = T.c.color; vctx.lineWidth = Math.max(fs * 0.06, 0.8 / S.vs); vctx.strokeRect(x, y, w, h);
     vctx.fillStyle = "#111"; vctx.font = `600 ${fs}px Arial, "Noto Sans TC", sans-serif`;
@@ -2258,6 +2386,7 @@ function paint() {
   // 風管：先畫色塊，再畫中心線與標籤
   paintFills();
   paintDucts();
+  paintLegend();
   // 檢核中的標記
   if (S.review) {
     const it = S.review.list[S.review.i];
@@ -2541,6 +2670,11 @@ async function exportPdf() {
       const labels = layoutLabels(p); if (!labels.length) continue;
       const vp = await vp1(p), page = doc.getPage(p), rot = page.getRotation().angle || 0;
       for (const L of labels) { page.node.addAnnot(labelAnnot(ctx, vp, rot, L)); nl++; }
+    }
+    for (let p = 0; p < S.pdf.numPages; p++) {
+      const B = S.legends[p] && (await vp1(p), legendBox(p)); if (!B) continue;
+      const vp = await vp1(p), page = doc.getPage(p), rot = page.getRotation().angle || 0;
+      page.node.addAnnot(legendAnnot(ctx, vp, rot, B));
     }
     for (const p of pages) {
       const tags = sizeTags(p); if (!tags.length) continue;
@@ -3506,7 +3640,7 @@ function catJSON(c, withMarks) {
     vt: c.vt ? { segs: c.vt.segs, excl: [...c.vt.excl], page: c.vt.page } : null,
     raw: c.raw ? { w: c.raw.w, h: c.raw.h, t: b64(c.raw.t) } : null,
     tpl: c.tpl ? { w: c.tpl.w, h: c.tpl.h, t: b64(c.tpl.t), m: b64(c.tpl.m) } : null,
-    num: c.num, cands: withMarks ? c.cands : {}, manual: withMarks ? c.manual : {}
+    num: c.num, unit: c.unit || "個", cands: withMarks ? c.cands : {}, manual: withMarks ? c.manual : {}
   };
 }
 function catFrom(o) {
@@ -3514,7 +3648,7 @@ function catFrom(o) {
   Object.assign(c, {
     color: o.color || c.color, visible: o.visible !== false, method: o.method || "vec", thr: o.thr ?? 0.9, rot: o.rot ?? true, mir: !!o.mir, scl: !!o.scl,
     ignore: o.ignore ?? 30, layerLock: !!o.layerLock, styLock: o.styLock !== false, txt: o.txt || { pat: "", whole: true }, size: o.size || null, refined: !!o.refined, tplRect: o.tplRect || null,
-    cands: o.cands || {}, manual: o.manual || {}, num: Object.assign(c.num, o.num || {})
+    cands: o.cands || {}, manual: o.manual || {}, num: Object.assign(c.num, o.num || {}), unit: o.unit || "個"
   });
   c.vt = o.vt ? { segs: o.vt.segs, excl: new Set(o.vt.excl || []), page: o.vt.page, fresh: false } : null;
   c.raw = o.raw ? { w: o.raw.w, h: o.raw.h, t: unb64(o.raw.t) } : null;
@@ -3528,6 +3662,7 @@ function saveProject() {
     app: "圖面清點", ver: 4, saved: new Date().toISOString(), fileName: S.fileName, numPages: S.pdf.numPages,
     pageNames: S.pageNames, zones: S.zones, active: S.cats.findIndex(c => c.id === S.active),
     cats: S.cats.map(c => catJSON(c, true)), ducts: S.ducts, ductSeq: S.ductSeq, scales: S.scales, dsys: S.dsys,
+    legends: S.legends, legOpt: S.legOpt,
     layerVis: S.layers.map((L, i) => [L.name, S.layerVis[i]]), styLocks: S.styLocks, labelPt: S.labelPt, mergeNum: S.mergeNum, showPath: S.showPath,
     proj: { name: $("projName").value, floor: $("projFloor").value }, ductCfg: S.dc
   };
@@ -3547,6 +3682,7 @@ async function openProject(file) {
   S.active = S.cats[o.active] ? S.cats[o.active].id : (S.cats[0] && S.cats[0].id) || null;
   if (Array.isArray(o.pageNames)) o.pageNames.forEach((n, i) => { if (n && i < S.pdf.numPages) S.pageNames[i] = n; });
   S.zones = o.zones || {}; S.zoneVer++; NUM_CACHE.clear();
+  S.legends = o.legends || {}; if (o.legOpt) S.legOpt = Object.assign({ sizes: true, ducts: true }, o.legOpt);
   S.styLocks = Array.isArray(o.styLocks) ? o.styLocks : []; S.styVer++; S.pickCache = null;
   S.ducts = o.ducts || [];
   // 手動標示的寬度與邊線線型改用對稱量測（v4.12），舊專案的量測值重新計算
@@ -4479,6 +4615,14 @@ document.querySelectorAll("#methodSeg button").forEach(b => b.addEventListener("
   if (c.method === "vec" && c.tplRect && !c.vt) toast("這個樣板沒有向量線段，請重新框選");
   refreshAll();
 }));
+$("legPlace").addEventListener("click", () => {
+  if (!S.pdf) return;
+  const r = view.getBoundingClientRect();   // 放在目前畫面左上角附近
+  S.legends[S.page] = { x: (20 - S.ox) / S.vs, y: (20 - S.oy) / S.vs }; S.dirty = true; vp1(S.page).then(() => { renderLegendUI(); draw(); });
+});
+$("legRemove").addEventListener("click", () => { delete S.legends[S.page]; S.dirty = true; renderLegendUI(); draw(); });
+$("legSizes").addEventListener("change", e => { S.legOpt.sizes = e.target.checked; draw(); });
+$("legDucts").addEventListener("change", e => { S.legOpt.ducts = e.target.checked; draw(); });
 $("addCat").addEventListener("click", () => { addCategory(); setTimeout(() => { const ins = $("tallyBody").querySelectorAll(".nm"); const el = ins[ins.length - 1]; el && (el.focus(), el.select()); }, 0); });
 $("ignore").addEventListener("input", e => { const c = activeCat(); if (!c) return; c.ignore = +e.target.value; $("ignoreOut").textContent = c.ignore + "%"; c.refined = false; buildImgTpl(c); renderSearch(); });
 $("optRot").addEventListener("change", e => { const c = activeCat(); if (c) c.rot = e.target.checked; });
@@ -4593,6 +4737,8 @@ view.addEventListener("pointerdown", e => {
   }
   // 拖曳已選取風管的端點或轉折點
   const hv = e.button === 0 && !S.space && !S.draft && !S.pending && (S.mode === "pan" || S.mode === "duct") ? hitVertex(p) : null;
+  const lg = e.button === 0 && S.mode === "pan" && !S.space && !hv ? hitLegend(p) : null;
+  if (lg) { S.drag = { kind: "leg", page: S.page, ox0: lg.x, oy0: lg.y, p0: p, sx: e.clientX, sy: e.clientY, moved: false }; view.style.cursor = "move"; return; }
   if (hv) { S.drag = { kind: "vtx", d: hv.d, i: hv.i, old: hv.d.pts.map(q => q.slice()), sx: e.clientX, sy: e.clientY, moved: false }; view.style.cursor = "move"; return; }
   const pan = e.button === 1 || S.space || S.mode === "pan";
   S.drag = { sx: e.clientX, sy: e.clientY, ox: S.ox, oy: S.oy, p0: p, kind: pan ? "pan" : (S.mode === "tpl" || S.mode === "zone") ? "sel" : "click", moved: false };
@@ -4612,6 +4758,7 @@ view.addEventListener("pointermove", e => {
   }
   const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
   if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+  if (d.kind === "leg") { if (d.moved) { S.legends[d.page] = { x: d.ox0 + p.x - d.p0.x, y: d.oy0 + p.y - d.p0.y }; draw(); } return; }
   if (d.kind === "vtx") {
     if (!d.moved) return;
     const sn = computeSnap(p, e.altKey), P = d.d.pts, n = P.length;
@@ -4628,6 +4775,7 @@ view.addEventListener("pointermove", e => {
 view.addEventListener("pointerup", e => {
   const d = S.drag; S.drag = null; if (!d) return;
   const p = toBase(e);
+  if (d.kind === "leg") { view.style.cursor = modeCursor(S.mode); if (d.moved) S.dirty = true; return; }
   if (d.kind === "vtx") {
     view.style.cursor = modeCursor(S.mode); S.onVtx = false;
     if (d.moved) {
