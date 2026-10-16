@@ -171,6 +171,24 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   fh = await fillHit([[300, 300], [300, 312], [300, 288]]);
   check("輸入與量測相符（800）時照常依邊線上色", fh.every(Boolean), fh);
 
+  console.log("● 拖曳已標示風管的端點調整長度（真實滑鼠操作）");
+  await open("straight");
+  await autoPick(300, 280, ["", "400"]);
+  await page.evaluate(() => setMode("pan"));
+  r = await page.evaluate(() => S.selDuct === S.ducts[0].id);
+  check("標示完成後風管為選取狀態", r, r);
+  {
+    const end = await page.evaluate(([H]) => { const d = S.ducts[0], q = d.pts[d.pts.length - 1], r = view.getBoundingClientRect(); return { x: r.left + S.ox + q[0] * S.vs, y: r.top + S.oy + q[1] * S.vs, px: q[0] / SCALE }; }, [H]);
+    const target = await scr(end.px < 300 ? 200 : 400, 300);   // 往內拉 100pt（2 m）
+    await page.mouse.move(end.x, end.y); await page.mouse.down();
+    await page.mouse.move((end.x + target.x) / 2, target.y, { steps: 4 }); await page.mouse.move(target.x, target.y, { steps: 4 }); await page.mouse.up();
+  }
+  D = await ducts();
+  check("拖曳後長度由 8 m 變成 6 m", D[0] && near(D[0].L, 6, 0.1), D[0] && D[0].L);
+  await page.evaluate(() => { const f = S.undo.pop(); f(); refreshAll(); });
+  D = await ducts();
+  check("Ctrl+Z 復原為 8 m", D[0] && near(D[0].L, 8, 0.1), D[0] && D[0].L);
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);

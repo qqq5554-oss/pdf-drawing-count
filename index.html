@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.17</title>
+<title>圖面符號清點 v4.18</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.17</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.18</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -428,6 +428,7 @@ details.adv .hint{margin-top:4px}
       </details>
       <div class="ductEdit" id="ductEdit" hidden>
         <div class="dh"><b id="deTitle"></b><span id="deLen"></span></div>
+        <p class="hint">拖曳圖上的端點或轉折點可調整位置（Shift 水平／垂直、Alt 暫停吸附、Ctrl+Z 復原）。</p>
         <div class="sysbar" id="deSys" role="radiogroup" aria-label="這段風管的系統"></div>
         <div class="extinfo" id="deExt"></div>
         <div class="row2"><label for="deSize">尺寸</label><input type="text" id="deSize" class="txt" spellcheck="false"></div>
@@ -2067,6 +2068,7 @@ const HINTS = {
   duct: "沿風管中心線點選轉折點，雙擊或 Enter 完成。",
   cal: "在圖上點選已知長度的兩端，再輸入實際長度。"
 };
+const modeCursor = m => m === "pan" ? "grab" : (m === "tpl" || m === "zone" || m === "duct" || m === "cal") ? "crosshair" : m === "add" ? "copy" : "not-allowed";
 function setMode(m) {
   S.mode = m;
   document.querySelectorAll(".tools button").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
@@ -2074,7 +2076,7 @@ function setMode(m) {
   $("tplBtn").classList.toggle("on", m === "tpl");
   $("tplBtn").firstElementChild.textContent = m === "tpl" ? "框選中…（再點一次取消）" : (activeCat() && activeCat().tplRect ? "重新框選樣板" : "在圖上框選一個符號");
   $("tplHint").hidden = m !== "tpl";
-  view.style.cursor = m === "pan" ? "grab" : (m === "tpl" || m === "zone" || m === "duct" || m === "cal") ? "crosshair" : m === "add" ? "copy" : "not-allowed";
+  view.style.cursor = modeCursor(m);
   if (m !== "duct") S.draft = null;
   if (m !== "cal") S.cal = null;
   if (m !== "duct" && m !== "cal") S.cursor = null;
@@ -3133,6 +3135,7 @@ function renderDuct() {
   $("ductEdit").hidden = !d;
   if (d) {
     const L = ductLenM(d);
+    $("deTitle").title = "拖曳圖上的端點或轉折點可調整位置（Shift 水平／垂直，Alt 暫停吸附，Ctrl+Z 復原）";
     $("deTitle").textContent = `第 ${nOf.get(d.id)} 項，${pageName(d.page)}` + (d.how === "auto" ? "（自動標示）" : d.how === "manual" ? "（手動標示）" : "");
     $("deLen").textContent = L != null ? `L = ${L.toFixed(3)} m` : "未設定比例";
     const gx = ductGeo(d), k = mmPerPt(d.page);
@@ -4463,6 +4466,13 @@ $("mergeNum").addEventListener("change", e => { S.mergeNum = e.target.checked; N
 document.querySelectorAll("[data-fmt]").forEach(b => b.addEventListener("click", () => { setNum("on", true); setNum("fmt", b.dataset.fmt); $("numFmt").value = b.dataset.fmt; }));
 
 view.addEventListener("contextmenu", e => e.preventDefault());
+// 已選取風管的端點／轉折點（拖曳調整用）
+function hitVertex(p) {
+  const d = S.ducts.find(x => x.id === S.selDuct); if (!d || d.page !== S.page) return null;
+  let best = null, bd = 9 / S.vs;
+  d.pts.forEach((q, i) => { const dd = Math.hypot(q[0] - p.x, q[1] - p.y); if (dd < bd) { bd = dd; best = { d, i }; } });
+  return best;
+}
 view.addEventListener("pointerdown", e => {
   if (!S.raster) return;
   view.setPointerCapture(e.pointerId);
@@ -4473,6 +4483,9 @@ view.addEventListener("pointerdown", e => {
     if (S.mode === "duct" && (S.pending || (S.draft && S.draft.pts.length))) { if (S.draft && S.draft.pts.length < 2 && !S.pending) toast("至少需要兩個點"); else showFinish(e); return; }
     deleteAt(p); return;
   }
+  // 拖曳已選取風管的端點或轉折點
+  const hv = e.button === 0 && !S.space && !S.draft && !S.pending && (S.mode === "pan" || S.mode === "duct") ? hitVertex(p) : null;
+  if (hv) { S.drag = { kind: "vtx", d: hv.d, i: hv.i, old: hv.d.pts.map(q => q.slice()), sx: e.clientX, sy: e.clientY, moved: false }; view.style.cursor = "move"; return; }
   const pan = e.button === 1 || S.space || S.mode === "pan";
   S.drag = { sx: e.clientX, sy: e.clientY, ox: S.ox, oy: S.oy, p0: p, kind: pan ? "pan" : (S.mode === "tpl" || S.mode === "zone") ? "sel" : "click", moved: false };
   if (pan) view.style.cursor = "grabbing";
@@ -4483,11 +4496,23 @@ view.addEventListener("pointermove", e => {
   if (!d) {
     const h = (S.mode === "del" || S.mode === "add") ? hitMark(p) : null;
     if ((h && h.m) !== (S.hover && S.hover.m)) { S.hover = h; draw(); }
+    // 游標移到已選取風管的端點上：顯示可拖曳
+    const onV = S.selDuct && (S.mode === "pan" || S.mode === "duct") && !S.draft && !S.pending && hitVertex(p);
+    if (!!onV !== !!S.onVtx) { S.onVtx = !!onV; view.style.cursor = onV ? "move" : modeCursor(S.mode); }
     if (S.mode === "duct" || S.mode === "cal") { S.pendMove = { p, e: { shiftKey: e.shiftKey, altKey: e.altKey } }; drawOver(); }
     return;
   }
   const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
   if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+  if (d.kind === "vtx") {
+    if (!d.moved) return;
+    const sn = computeSnap(p, e.altKey), P = d.d.pts, n = P.length;
+    let q = sn ? [sn.x, sn.y] : [p.x, p.y];
+    // Shift：與相鄰點保持水平或垂直
+    const nb = d.i === 0 ? P[1] : d.i === n - 1 ? P[n - 2] : null;
+    if (e.shiftKey && nb) { if (Math.abs(q[0] - nb[0]) >= Math.abs(q[1] - nb[1])) q[1] = nb[1]; else q[0] = nb[0]; }
+    P[d.i] = q; S.cursor = { x: q[0], y: q[1], snap: sn }; GEO.fresh = false; draw(); drawOver(); return;
+  }
   if (d.kind === "click" && d.moved) d.kind = "pan";
   if (d.kind === "pan") { S.ox = d.ox + dx; S.oy = d.oy + dy; interacting(); draw(); }
   else if (d.kind === "sel") { S.sel = { x: Math.min(d.p0.x, p.x), y: Math.min(d.p0.y, p.y), w: Math.abs(p.x - d.p0.x), h: Math.abs(p.y - d.p0.y) }; draw(); }
@@ -4495,6 +4520,16 @@ view.addEventListener("pointermove", e => {
 view.addEventListener("pointerup", e => {
   const d = S.drag; S.drag = null; if (!d) return;
   const p = toBase(e);
+  if (d.kind === "vtx") {
+    view.style.cursor = modeCursor(S.mode); S.onVtx = false;
+    if (d.moved) {
+      const dd = d.d, old = d.old;
+      S.undo.push(() => { dd.pts = old; GEO.fresh = false; FILLS.delete(dd.id); });
+      FILLS.delete(dd.id); GEO.fresh = false; S.dirty = true;
+      renderDuct(); draw(); drawOver();
+    }
+    return;
+  }
   if (d.kind === "sel") {
     const s = S.sel; S.sel = null;
     if (S.mode === "zone") {
