@@ -235,6 +235,19 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("依尺寸：800×400 ×2、400×250 ×1、不在風管上 ×1", JSON.stringify(r.sizes) === JSON.stringify([["400×250", 1], ["800×400", 2], ["不在風管上", 1]]), r.sizes);
   check("編號格式 {尺寸} 帶出風管尺寸", r.labels.filter(t => t.endsWith("800×400")).length === 2 && r.labels.some(t => t.endsWith("400×250")), r.labels);
   check("清點面板顯示依尺寸統計", r.ui.includes("800×400") && r.ui.includes("不在風管上"), r.ui);
+  r = await page.evaluate(() => { const c = S.cats[0]; c.num.on = false; return sizeTags(0).map(t => t.text).sort(); });
+  check("未開編號時，圖上自動標出風門尺寸（3 個在風管上）", JSON.stringify(r) === JSON.stringify(["400×250", "800×400", "800×400"]), r);
+  r = await page.evaluate(() => { const c = S.cats[0]; c.num.on = true; c.num.fmt = "VD-{號} {尺寸}"; return sizeTags(0).length; });
+  check("編號已含 {尺寸} 時不重複標示", r === 0, r);
+  r = await page.evaluate(async () => {
+    S.cats[0].num.on = false; let blob = null; const orig = window.download; window.download = b => { blob = b; };
+    try { await exportPdf(); } finally { window.download = orig; }
+    const doc = await PDFLib.PDFDocument.load(new Uint8Array(await blob.arrayBuffer()));
+    const an = doc.getPage(0).node.Annots(); let n = 0;
+    if (an) for (let i = 0; i < an.size(); i++) { const d = an.lookup(i); const nm = d.get(PDFLib.PDFName.of("NM")); if (nm && nm.decodeText().startsWith("CNTL_SIZE_")) n++; }
+    return n;
+  });
+  check("匯出 PDF 含風門尺寸標籤 3 個", r === 3, r);
   r = await page.evaluate(async () => {
     const got = {}; const orig = window.download; window.download = (blob, name) => { got[name.endsWith(".csv") ? "csv" : "xlsx"] = blob; };
     try { exportCsv(); exportXlsx(); } finally { window.download = orig; }

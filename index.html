@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.22</title>
+<title>圖面符號清點 v4.23</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -239,7 +239,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.22</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.23</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -1748,6 +1748,20 @@ function markDuct(m, p) {
   }
   return best;
 }
+// 圖上的風管尺寸標籤：落在風管上的標記，在下方標出所在風管尺寸（該類別編號已用 {尺寸} 時不重複）
+function sizeTags(p) {
+  if (!S.ducts.some(d => d.page === p)) return [];
+  const out = [], fsPt = labelPt() * 0.85, fs = fsPt * SCALE;
+  for (const c of S.cats) {
+    if (!c.visible || (c.num.on && /\{尺寸\}/.test(c.num.fmt || ""))) continue;
+    for (const m of marksOf(c, p)) {
+      const text = markSize(m, p); if (!text) continue;
+      const w = (textEm(text) + 0.6) * fs, h = fs * 1.45;
+      out.push({ x: m.x + m.w / 2 - w / 2, y: m.y + m.h + fs * 0.25, w, h, text, fs, fsPt, c, m });
+    }
+  }
+  return out;
+}
 const markSize = (m, p) => { const d = markDuct(m, p), z = d && parseSize(d.size); return z ? sizeText(z) : ""; };
 // 依風管尺寸統計：[[尺寸, 數量], ...]，不在風管上的列為「不在風管上」；沒有任何一個在風管上時回傳空陣列
 function sizeCounts(c) {
@@ -2208,6 +2222,16 @@ function paint() {
     vctx.fillStyle = "#111"; vctx.font = `bold ${L.fs}px Arial, "Helvetica Neue", "Noto Sans TC", sans-serif`;
     vctx.textAlign = "center"; vctx.textBaseline = "middle"; vctx.fillText(L.text, L.x + L.w / 2, L.y + L.h / 2 + L.fs * 0.05);
   }
+  // 風管尺寸標籤（風門等落在風管上的標記）
+  for (const T of sizeTags(S.page)) {
+    // 畫面上至少維持約 10.5px 字高才看得清楚（匯出 PDF 仍依編號字級）
+    const fs = Math.max(T.fs, 10.5 / S.vs), w = (textEm(T.text) + 0.6) * fs, h = fs * 1.45, m = T.m;
+    const x = m.x + m.w / 2 - w / 2, y = m.y + m.h + fs * 0.25;
+    vctx.fillStyle = "rgba(255,255,255,.92)"; vctx.fillRect(x, y, w, h);
+    vctx.strokeStyle = T.c.color; vctx.lineWidth = Math.max(fs * 0.06, 0.8 / S.vs); vctx.strokeRect(x, y, w, h);
+    vctx.fillStyle = "#111"; vctx.font = `600 ${fs}px Arial, "Noto Sans TC", sans-serif`;
+    vctx.textAlign = "center"; vctx.textBaseline = "middle"; vctx.fillText(T.text, x + w / 2, y + h / 2 + fs * 0.05);
+  }
   // 風管：先畫色塊，再畫中心線與標籤
   paintFills();
   paintDucts();
@@ -2494,6 +2518,11 @@ async function exportPdf() {
       const labels = layoutLabels(p); if (!labels.length) continue;
       const vp = await vp1(p), page = doc.getPage(p), rot = page.getRotation().angle || 0;
       for (const L of labels) { page.node.addAnnot(labelAnnot(ctx, vp, rot, L)); nl++; }
+    }
+    for (const p of pages) {
+      const tags = sizeTags(p); if (!tags.length) continue;
+      const vp = await vp1(p), page = doc.getPage(p), rot = page.getRotation().angle || 0;
+      tags.forEach(L => page.node.addAnnot(labelAnnot(ctx, vp, rot, L, "CNTL_SIZE_")));
     }
     const nd = await exportDuctsToPdf(doc, ctx);
     download(new Blob([await doc.save()], { type: "application/pdf" }), `${S.fileName}_清點.pdf`);
