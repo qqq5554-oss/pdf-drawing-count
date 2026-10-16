@@ -197,6 +197,14 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     check(`${how === "auto" ? "自動" : "手動"}：管內有上色、管道間內（終點之後）沒有上色`, fh[0] && fh[1] && !fh[2] && !fh[3], { fh, pts: D[0] && D[0].pts });
   }
 
+  console.log("● 細管末端離大管還有 1 m 時，不接到大管");
+  await open("small-near-big");
+  await autoPick(200, 350, ["", "800"]);
+  await autoPick(292.5, 200, ["", "250"]);
+  D = await ducts();
+  const sm = D.find(d => d.size.startsWith("300"));
+  check("細管兩端都沒有接頭延伸、長度 4 m", sm && sm.kind.every(k => !k) && near(sm.L, 4, 0.05), sm && [sm.kind, sm.L]);
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);

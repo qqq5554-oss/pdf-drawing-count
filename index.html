@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.19</title>
+<title>圖面符號清點 v4.20</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.19</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.20</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -3528,7 +3528,8 @@ function ductGeoAll() {
           const cr = cross(u, v), sn = Math.abs(cr); if (sn < 0.42) continue;
           const w0 = [s0[0] - E[0], s0[1] - E[1]], t = cross(w0, v) / cr, tau = cross(w0, u) / cr;
           const fe = B.W / 2 / sn;
-          if (t < -fe || t > fe + reach / sn) continue;
+          // 本段末端到另一段近側邊緣的距離，以本段管寬為準（細管旁邊有大管時，不會跨過空隙接到大管）
+          if (t < -fe || t > fe + 1.5 * A.W / sn) continue;
           const lim = A.W / 2 / sn + reach;
           if (tau < -lim || tau > Ls + lim) continue;
           const aw = A.W / sn, atEnd = (s === 1 && tau < aw) || (s === B.P.length - 1 && tau > Ls - aw);
