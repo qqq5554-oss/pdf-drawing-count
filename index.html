@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.23</title>
+<title>圖面符號清點 v4.24</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -198,6 +198,12 @@ details summary{cursor:pointer;font-size:13px;font-weight:700}
 .txtlist{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:6px;font-size:12.5px;color:var(--muted)}
 .txtlist b{color:var(--ink);font-weight:500}
 .txtlist .lbl{flex-basis:100%;font-size:11.5px;color:var(--muted)}
+.szt{margin-right:2px;width:18px;min-width:18px;padding:0;flex:none}
+.hasSzt{display:flex;align-items:center}
+.hasSzt .nm{flex:1;min-width:0}
+tr.szrow td{font-size:12.5px;color:var(--muted);padding-top:2px;padding-bottom:2px}
+tr.szrow td.szname{padding-left:30px}
+tr.szrow td.num{font-weight:500}
 .wh{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
 .wh .txt{width:0;flex:1;min-width:0;text-align:center}
 .wh span{color:var(--muted);font-size:13px}
@@ -239,7 +245,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.23</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.24</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -1947,6 +1953,7 @@ function renderTally() {
     const np = marksOf(c, S.page).length, na = countAll(c); sp += np; sa += na;
     const tr = document.createElement("tr");
     tr.className = "row" + (c.id === S.active ? " on" : "") + (c.visible ? "" : " off");
+    tr.dataset.cid = c.id;
     tr.innerHTML = `<td style="width:22px"><span class="chip" style="background:${c.color}"><input type="color" value="${c.color}" aria-label="顏色"></span></td>
       <td><input class="nm" value="${c.name.replace(/"/g, "&quot;")}" aria-label="類別名稱"></td>
       <td class="num">${np}</td><td class="num sub">${na}</td>
@@ -1961,10 +1968,26 @@ function renderTally() {
       S.cats = S.cats.filter(x => x !== c); if (S.active === c.id) S.active = S.cats[0]?.id || null; refreshAll();
     });
     tb.appendChild(tr);
+    // 依所在風管尺寸的明細（可展開／收合）
+    const szAll = sizeCounts(c);
+    if (szAll.length) {
+      const tg = document.createElement("button"); tg.className = "ico szt"; tg.title = c.showSizes ? "收合尺寸明細" : "展開尺寸明細（依所在風管尺寸）";
+      tg.textContent = c.showSizes ? "▾" : "▸";
+      const nm = tr.querySelector(".nm"), wrap = document.createElement("span"); wrap.className = "hasSzt"; nm.before(wrap); wrap.append(tg, nm);
+      tg.addEventListener("click", () => { c.showSizes = !c.showSizes; renderTally(); });
+      if (c.showSizes) {
+        const pg = new Map(); for (const m of marksOf(c, S.page)) { const k = markSize(m, S.page) || "不在風管上"; pg.set(k, (pg.get(k) || 0) + 1); }
+        for (const [t, n] of szAll) {
+          const sr = document.createElement("tr"); sr.className = "szrow" + (c.visible ? "" : " off");
+          sr.innerHTML = `<td></td><td class="szname">${t}</td><td class="num">${pg.get(t) || 0}</td><td class="num sub">${n}</td><td></td>`;
+          tb.appendChild(sr);
+        }
+      }
+    }
   }
   $("sumPage").textContent = sp; $("sumAll").textContent = sa;
 }
-function markRows() { [...$("tallyBody").children].forEach((tr, i) => tr.classList.toggle("on", S.cats[i]?.id === S.active)); }
+function markRows() { [...$("tallyBody").children].forEach(tr => { if (tr.dataset.cid) tr.classList.toggle("on", tr.dataset.cid === S.active); }); }
 
 /* ---------- 樣板 ---------- */
 // 向量比對只看與樣板相同線型（線寬、顏色、透明度、虛線、圖層，容許些微差異）的線段，避開建築與家具
@@ -3554,7 +3577,7 @@ function setTab(t) {
   S.tab = t;
   document.querySelectorAll(".tabs button").forEach(b => { b.classList.toggle("on", b.dataset.tab === t); b.setAttribute("aria-selected", b.dataset.tab === t); });
   document.querySelectorAll(".pane").forEach(p => p.hidden = p.dataset.pane !== t);
-  if (t === "count") { renderEditor(); renderSearch(); }   // 風管可能已變動，更新「依所在風管尺寸」
+  if (t === "count") { renderEditor(); renderSearch(); renderTally(); }   // 風管可能已變動，更新「依所在風管尺寸」
   if (t === "duct") { renderDuct(); renderStyBox(true); }
   if (t === "layer") renderLayers();
   $("side").scrollTop = 0;

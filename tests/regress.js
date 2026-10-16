@@ -248,6 +248,15 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     return n;
   });
   check("匯出 PDF 含風門尺寸標籤 3 個", r === 3, r);
+  await page.evaluate(() => { setTab("count"); renderTally(); });
+  r = await page.evaluate(() => ({ btn: !!document.querySelector("#tallyBody .szt"), rows: document.querySelectorAll("#tallyBody tr.szrow").length }));
+  check("統計表有展開按鈕、預設收合", r.btn && r.rows === 0, r);
+  await page.click("#tallyBody .szt");
+  r = await page.evaluate(() => [...document.querySelectorAll("#tallyBody tr.szrow")].map(tr => [...tr.children].map(td => td.textContent.trim()).filter(Boolean).join(" ")));
+  check("點一下展開各尺寸數量（本頁／全部）", JSON.stringify(r) === JSON.stringify(["400×250 1 1", "800×400 2 2", "不在風管上 1 1"]), r);
+  await page.click("#tallyBody .szt");
+  r = await page.evaluate(() => document.querySelectorAll("#tallyBody tr.szrow").length);
+  check("再點一下收合", r === 0, r);
   r = await page.evaluate(async () => {
     const got = {}; const orig = window.download; window.download = (blob, name) => { got[name.endsWith(".csv") ? "csv" : "xlsx"] = blob; };
     try { exportCsv(); exportXlsx(); } finally { window.download = orig; }
