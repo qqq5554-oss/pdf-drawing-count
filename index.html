@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.15</title>
+<title>圖面符號清點 v4.16</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.15</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.16</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -2083,8 +2083,8 @@ function setMode(m) {
   if ($("pickSeg")) {
     document.querySelectorAll("#pickSeg button").forEach(b => { const on = m === "duct" && b.dataset.p === S.dpick; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
     $("ductHint").textContent = m !== "duct" ? "選擇手動或自動標示開始。完成後按右鍵，點「標示完成」；Esc 取消。"
-      : S.dpick === "seg" ? "點一下風管邊線即可預覽，寬度會自動填入，只要輸入高度。按右鍵點「標示完成」，Esc 取消。抓錯邊線時，可按住 Ctrl 依序點兩側邊線。"
-      : "依序點選風管中心線的轉折點，按右鍵點「標示完成」，Esc 取消。寬度量不準時，可先按住 Ctrl 依序點風管兩側邊線指定寬度。";
+      : S.dpick === "seg" ? "點一下風管邊線即可預覽，寬度會自動填入，輸入高度後按 Enter 即完成（或按右鍵點「標示完成」），Esc 取消。抓錯邊線時，可按住 Ctrl 依序點兩側邊線。"
+      : "依序點選風管中心線的轉折點，按右鍵點「標示完成」或按 Enter（輸入高度後也可直接按 Enter），Esc 取消。寬度量不準時，可先按住 Ctrl 依序點風管兩側邊線指定寬度。";
   }
   updateStatus(); draw();
 }
@@ -3121,8 +3121,8 @@ function renderDuct() {
   const drawing = S.mode === "duct";
   document.querySelectorAll("#pickSeg button").forEach(b => { const on = drawing && b.dataset.p === S.dpick; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
   $("ductHint").textContent = !drawing ? "選擇手動或自動標示開始。完成後按右鍵，點「標示完成」；Esc 取消。"
-    : S.dpick === "seg" ? "點一下風管邊線即可預覽，寬度會自動填入，只要輸入高度。按右鍵點「標示完成」，Esc 取消。抓錯邊線時，可按住 Ctrl 依序點兩側邊線。"
-    : "依序點選風管中心線的轉折點，按右鍵點「標示完成」，Esc 取消。寬度量不準時，可先按住 Ctrl 依序點風管兩側邊線指定寬度。";
+    : S.dpick === "seg" ? "點一下風管邊線即可預覽，寬度會自動填入，輸入高度後按 Enter 即完成（或按右鍵點「標示完成」），Esc 取消。抓錯邊線時，可按住 Ctrl 依序點兩側邊線。"
+    : "依序點選風管中心線的轉折點，按右鍵點「標示完成」或按 Enter（輸入高度後也可直接按 Enter），Esc 取消。寬度量不準時，可先按住 Ctrl 依序點風管兩側邊線指定寬度。";
   if (false) $("ductHint").textContent = S.dpick === "seg"
     ? "點一下圖上的線段即建立一段風管。相連的線段會自動接續，遇到分岔就停止；邊線被其他管路穿過而斷開時，同一直線上的下一段會自動接上。點選雙線風管的一側邊線時，自動取兩側邊線的中心線。按住 Alt 點選則直接使用該線段。常誤選到隔間時，把風管的線型「加入」，之後只會選到這些線型。"
     : "點一下放轉折點，雙擊或按 Enter 完成，Backspace 退回一點，Esc 取消。按住 Shift 只畫水平垂直，按住 Alt 暫停吸附。繪製中只吸附與行進方向平行的中心線，穿過的管路不會干擾。風管變尺寸時請另畫一段。";
@@ -3689,7 +3689,8 @@ function computeFill(d, ix) {
     const i = end ? nP - 1 : 0, j = end ? nP - 2 : 1, dx = g.P[i][0] - g.P[j][0], dy = g.P[i][1] - g.P[j][1], l = Math.hypot(dx, dy) || 1;
     P[i] = [g.P[i][0] + dx / l * len, g.P[i][1] + dy / l * len];
   }
-  const pad = W * 0.9 + 2;
+  // 範圍須涵蓋管件區（彎頭時往另一段延伸的距離可能大於管寬），另一段的邊線才會被當成邊界
+  const pad = Math.max(W * 0.9, g.ext[0] || 0, g.ext[1] || 0) + 2;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const q of P) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
@@ -3783,12 +3784,29 @@ function computeFill(d, ix) {
     if (zones.length) {
       const ep = []; for (const i of E) ep.push([S4[4 * i], S4[4 * i + 1], i], [S4[4 * i + 2], S4[4 * i + 3], i]);
       const pad2 = Wc * 0.6, nearEnd = (x, y) => CL.some(c => { const t = (x - c.a[0]) * c.ux + (y - c.a[1]) * c.uy; return Math.abs(t) < pad2 || Math.abs(t - c.L) < pad2; });
-      const dang = ep.filter(([x, y, i]) => (inZone(x, y) || nearEnd(x, y)) && !ep.some(([x2, y2, j]) => j !== i && Math.hypot(x2 - x, y2 - y) < 0.5));
+      let dang = ep.filter(([x, y, i]) => (inZone(x, y) || nearEnd(x, y)) && !ep.some(([x2, y2, j]) => j !== i && Math.hypot(x2 - x, y2 - y) < 0.2));   // 真正相接的端點幾乎重合；弧線的小線段很短，不可放太寬
+      // 兩端都懸空的孤立短線（接合處記號等）不參與，以免圍出小封閉區被填色
+      const cntD = new Map(); dang.forEach(([, , i]) => cntD.set(i, (cntD.get(i) || 0) + 1));
+      dang = dang.filter(([, , i]) => !(cntD.get(i) === 2 && Math.hypot(S4[4 * i + 2] - S4[4 * i], S4[4 * i + 3] - S4[4 * i + 1]) < Wc * 0.5));
+      // 兩端點沿著線段相連的距離很短（例如文字筆畫的兩端）就不互連，避免圍出小封閉區被填色；
+      // 直管邊線到彎頭弧線起點這種沿線要繞很遠的缺口照樣補起來
+      const adj = new Map();
+      const node = (x, y) => { const k0x = Math.round(x / 0.5), k0y = Math.round(y / 0.5); for (let a2 = -1; a2 <= 1; a2++) for (let b2 = -1; b2 <= 1; b2++) { const k = (k0x + a2) + "," + (k0y + b2); if (adj.has(k)) return k; } const k = k0x + "," + k0y; adj.set(k, []); return k; };
+      for (const i of E) { const u = node(S4[4 * i], S4[4 * i + 1]), v = node(S4[4 * i + 2], S4[4 * i + 3]), L = Math.hypot(S4[4 * i + 2] - S4[4 * i], S4[4 * i + 3] - S4[4 * i + 1]); adj.get(u).push([v, L]); adj.get(v).push([u, L]); }
+      const pathNear = (p, q, lim) => {
+        const src = node(p[0], p[1]), dst = node(q[0], q[1]), dist = new Map([[src, 0]]), todo = [src];
+        while (todo.length) {
+          let bi = 0; for (let t = 1; t < todo.length; t++) if (dist.get(todo[t]) < dist.get(todo[bi])) bi = t;
+          const u = todo.splice(bi, 1)[0], du = dist.get(u); if (u === dst) return true;
+          for (const [v, L] of adj.get(u) || []) { const nd = du + L; if (nd <= lim && nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); todo.push(v); } }
+        }
+        return false;
+      };
       const gapMax = Wc * 0.55;
       for (const a of dang) {
         let bq = null, bd = gapMax;
         for (const b of dang) { if (b[2] === a[2]) continue; const dd = Math.hypot(b[0] - a[0], b[1] - a[1]); if (dd < bd) { bd = dd; bq = b; } }
-        if (bq) { ex.moveTo((a[0] - x0) * R, (a[1] - y0) * R); ex.lineTo((bq[0] - x0) * R, (bq[1] - y0) * R); }
+        if (bq && !pathNear(a, bq, Wc * 2)) { ex.moveTo((a[0] - x0) * R, (a[1] - y0) * R); ex.lineTo((bq[0] - x0) * R, (bq[1] - y0) * R); }
       }
     }
     ex.stroke();
@@ -4373,6 +4391,12 @@ $("deSize").addEventListener("change", e => {
   e.target.value = d.size; renderDuct(); draw();
 });
 $("deSize").addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); });
+// 在寬、高欄位輸入後按 Enter：有預覽或繪製中的風管就直接標示完成
+for (const id of ["ductW", "ductH"]) $(id).addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault(); e.target.blur();
+  if (S.mode === "duct" && (S.pending || (S.draft && S.draft.pts.length))) commitDuct();
+});
 $("deFind").addEventListener("click", async () => {
   const d = S.ducts.find(x => x.id === S.selDuct); if (!d) return;
   const f = await findSizeNear(d);

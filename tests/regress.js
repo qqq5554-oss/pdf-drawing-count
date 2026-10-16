@@ -152,6 +152,18 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   r = await page.evaluate(() => !!S.wsel);
   check("Esc 取消後橘色標示清除", r === false, r);
 
+  console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
+  await open("straight");
+  await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);
+  await page.fill("#ductH", "400"); await page.press("#ductH", "Enter"); await page.waitForTimeout(200);
+  D = await ducts();
+  check("自動：Enter 後建立 800x400", D.length === 1 && D[0].size === "800x400", D.map(d => d.size));
+  await open("straight");
+  await page.evaluate(H => { S.dpick = "pts"; setMode("duct"); ductClick({ x: 120 * SCALE, y: (H - 300) * SCALE }, {}); ductClick({ x: 480 * SCALE, y: (H - 300) * SCALE }, {}); }, H);
+  await page.fill("#ductW", "800"); await page.fill("#ductH", "300"); await page.press("#ductH", "Enter"); await page.waitForTimeout(200);
+  D = await ducts();
+  check("手動：Enter 後建立 800x300", D.length === 1 && D[0].size === "800x300", D.map(d => d.size));
+
   console.log("● 穿管處有重複線段仍可接續");
   await open("passthru-dup");
   r = await autoPick(150, 280, ["", "400"]); D = await ducts();
@@ -224,7 +236,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     return pts.map(([x, y]) => F.some(f => f && f.polys.some(P => inPoly(x * SCALE, (H - y) * SCALE, P))));
   }, { H, pts });
   // 檢查點：彎頭內部 2 點、外弧外側轉角 2 點、水平管下緣外 1 點、垂直管左緣外 1 點
-  const EG = [[258, 295], [265, 288], [243, 283], [247, 286], [300, 270], [230, 320]];
+  const EG = [[252, 292], [262, 285], [243, 283], [245, 284], [300, 270], [230, 320], [262, 302], [263, 303.5]];
   await open("elbow-gap");
   await autoPick(240, 450, ["", "300"]);
   await autoPick(450, 280, ["", "300"]);
@@ -232,6 +244,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("自動：兩段都判定彎頭", D.length === 2 && D.every(d => d.kind.includes("彎頭")), D.map(d => d.kind));
   check("自動：彎頭內部有上色", fh[0] && fh[1], fh);
   check("自動：外弧外側、管外沒有上色", !fh[2] && !fh[3] && !fh[4] && !fh[5], fh);
+  check("自動：內側喉部沒有上色", !fh[6] && !fh[7], fh.slice(6));
   await open("elbow-gap");
   await autoPick(240, 450, ["", "300"]);
   await manual([[560, 290], [285, 290]], ["400", "300"]);
@@ -239,6 +252,7 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("手動（中心線沒畫到轉角）：寬度 400、判定彎頭", D[1] && near(D[1].wdmm, 400, 5) && D[1].kind.includes("彎頭"), D[1] && [D[1].wdmm, D[1].kind]);
   check("手動：彎頭內部有上色", fh[0] && fh[1], fh);
   check("手動：外弧外側、管外沒有上色", !fh[2] && !fh[3] && !fh[4] && !fh[5], fh);
+  check("手動：內側喉部（內弧與轉角之間）沒有上色", !fh[6] && !fh[7], fh.slice(6));
 
   console.log("● 清點：向量比對");
   await open("count");
