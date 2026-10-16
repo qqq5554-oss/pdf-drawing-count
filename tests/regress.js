@@ -71,6 +71,14 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     };
   }), H);
 
+  // 檢查點（PDF 座標）是否落在任一段風管的色塊內
+  const fillHit = pts => page.evaluate(({ H, pts }) => {
+    const ix = S.vec.get(0); FILLS.clear(); const F = S.ducts.map(d => fillOf(d, ix));
+    const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+    return pts.map(([x, y]) => F.some(f => f && f.polys.some(P => inPoly(x * SCALE, (H - y) * SCALE, P))));
+  }, { H, pts });
+  let fh;
+
   console.log("● 直管（自動標示）");
   await open("straight");
   let r = await autoPick(300, 280, ["", "400"]), D = await ducts();
@@ -152,6 +160,17 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   r = await page.evaluate(() => !!S.wsel);
   check("Esc 取消後橘色標示清除", r === false, r);
 
+  console.log("● 手動標示：輸入的寬度與量測不符時，上色依輸入的寬度");
+  await open("straight");
+  await manual([[120, 300], [480, 300]], ["300", "200"]);
+  fh = await fillHit([[300, 300], [300, 305], [300, 312], [300, 288]]); D = await ducts();
+  check("量到 800、輸入 300 → 有寬度提醒", D[0] && D[0].wc && D[0].wc.dmm === 800, D[0] && D[0].wc);
+  check("色塊依 300 寬：中心有上色、離中心 12pt（240 mm）外沒有", fh[0] && fh[1] && !fh[2] && !fh[3], fh);
+  await open("straight");
+  await manual([[120, 300], [480, 300]], ["800", "200"]);
+  fh = await fillHit([[300, 300], [300, 312], [300, 288]]);
+  check("輸入與量測相符（800）時照常依邊線上色", fh.every(Boolean), fh);
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);
@@ -230,17 +249,12 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
   check("內角外側沒有上色", !filled.hit[8], filled.hit[8]);
 
   console.log("● 圓弧彎頭（接合處缺口）上色：自動＋手動");
-  const fillHit = pts => page.evaluate(({ H, pts }) => {
-    const ix = S.vec.get(0); FILLS.clear(); const F = S.ducts.map(d => fillOf(d, ix));
-    const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
-    return pts.map(([x, y]) => F.some(f => f && f.polys.some(P => inPoly(x * SCALE, (H - y) * SCALE, P))));
-  }, { H, pts });
   // 檢查點：彎頭內部 2 點、外弧外側轉角 2 點、水平管下緣外 1 點、垂直管左緣外 1 點
   const EG = [[252, 292], [262, 285], [243, 283], [245, 284], [300, 270], [230, 320], [262, 302], [263, 303.5]];
   await open("elbow-gap");
   await autoPick(240, 450, ["", "300"]);
   await autoPick(450, 280, ["", "300"]);
-  let fh = await fillHit(EG); D = await ducts();
+  fh = await fillHit(EG); D = await ducts();
   check("自動：兩段都判定彎頭", D.length === 2 && D.every(d => d.kind.includes("彎頭")), D.map(d => d.kind));
   check("自動：彎頭內部有上色", fh[0] && fh[1], fh);
   check("自動：外弧外側、管外沒有上色", !fh[2] && !fh[3] && !fh[4] && !fh[5], fh);

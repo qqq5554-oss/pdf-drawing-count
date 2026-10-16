@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.16</title>
+<title>圖面符號清點 v4.17</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -238,7 +238,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.16</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.17</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -3480,7 +3480,14 @@ S.dc = loadCfg(); S.dsys = S.dc.systems[0].name;
 /* ---------- 風管幾何：寬度與接頭延伸 ---------- */
 // 平面寬度（pt）：尺寸 W 或 D 依比例換算；沒有尺寸時用畫線時量到的兩側邊線距離
 // 圖面上的寬度（pt）：量到的兩側邊線距離優先，沒有才用尺寸換算
-function ductWG(d) { return d.wd || ductW(d); }
+// 幾何寬度：量測寬優先；但手動標示時若輸入的尺寸與量測寬明顯不符（同寬度提醒門檻），以輸入的尺寸為準
+function ductWG(d) {
+  if (d.how === "manual" && d.wd) {
+    const z = parseSize(d.size), k = mmPerPt(d.page);
+    if (z && k) { const w = (z.type === "rect" ? z.w : z.d), dmm = d.wd * k; if (Math.abs(dmm - w) > Math.max(50, w * 0.15)) return w / k; }
+  }
+  return d.wd || ductW(d);
+}
 function ductW(d) {
   const z = parseSize(d.size), k = mmPerPt(d.page);
   if (z && k) return (z.type === "rect" ? z.w : z.d) / k;
@@ -3729,7 +3736,7 @@ function computeFill(d, ix) {
   addCL(g.P, half);
   for (const o of S.ducts) {
     if (o === d || o.page !== d.page || o.single) continue;
-    const go = ductGeo(o), Wo = o.wd || (go.W ? go.W * 0.98 : 0); if (!Wo) continue;
+    const go = ductGeo(o), Wo = o.wd && go.W && Math.abs(o.wd - go.W) < go.W * 0.4 ? o.wd : (go.W ? go.W * 0.98 : 0); if (!Wo) continue;
     const Po = go.P; let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
     for (const q of Po) { bx0 = Math.min(bx0, q[0]); by0 = Math.min(by0, q[1]); bx1 = Math.max(bx1, q[0]); by1 = Math.max(by1, q[1]); }
     if (bx1 + Wo < x0 || bx0 - Wo > x1 || by1 + Wo < y0 || by0 - Wo > y1) continue;
