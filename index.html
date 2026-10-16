@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖面符號清點 v4.21</title>
+<title>圖面符號清點 v4.22</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -197,6 +197,7 @@ details summary{cursor:pointer;font-size:13px;font-weight:700}
 .laylist input{accent-color:var(--blue)}
 .txtlist{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:6px;font-size:12.5px;color:var(--muted)}
 .txtlist b{color:var(--ink);font-weight:500}
+.txtlist .lbl{flex-basis:100%;font-size:11.5px;color:var(--muted)}
 .wh{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
 .wh .txt{width:0;flex:1;min-width:0;text-align:center}
 .wh span{color:var(--muted);font-size:13px}
@@ -238,7 +239,7 @@ details.adv .hint{margin-top:4px}
 <body>
 <div class="app">
   <header class="top">
-    <span class="brand">圖面符號清點</span><span class="ver">v4.21</span>
+    <span class="brand">圖面符號清點</span><span class="ver">v4.22</span>
     <span class="file" id="fileName">尚未開啟檔案</span>
     <span class="grow"></span>
     <select id="pageSel" aria-label="頁面" disabled></select>
@@ -329,6 +330,7 @@ details.adv .hint{margin-top:4px}
       <div class="row2 tplOnly"><label for="thr">吻合度門檻</label><input type="range" id="thr" min="0.50" max="1.00" step="0.01" value="0.90"><output id="thrOut">0.90</output></div>
       <div class="result" id="result"></div>
       <div class="txtlist txtOnly" id="txtList"></div>
+      <div class="txtlist" id="sizeList" title="符號落在已標示的風管上時，依該風管尺寸分類計數（編號格式可用 {尺寸}）"></div>
       <button class="btn wide" id="rvStart" title="依吻合度由低到高，逐一確認自動找到的結果與門檻下候選">逐一檢核結果</button>
       <div class="review" id="reviewBox" hidden>
         <div class="rvhead"><b id="rvPos">0 / 0</b><span id="rvInfo"></span></div>
@@ -347,7 +349,7 @@ details.adv .hint{margin-top:4px}
       <label class="switch"><input type="checkbox" id="numOn"> 在標記上顯示編號</label>
       <div id="numBody">
         <div class="row2"><label for="numFmt">編號格式</label><input type="text" id="numFmt" class="txt" value="{號}" spellcheck="false"></div>
-        <div class="chips"><button data-fmt="{號}">純數字</button><button data-fmt="PD-{樓層}-{號}">PD-樓層-號</button><button data-fmt="SA-{號}">SA-號</button><button data-fmt="{樓層}-{號}">樓層-號</button><button data-fmt="PD-{樓層}-{區}{號}">分區碼</button></div>
+        <div class="chips"><button data-fmt="{號}">純數字</button><button data-fmt="PD-{樓層}-{號}">PD-樓層-號</button><button data-fmt="SA-{號}">SA-號</button><button data-fmt="{號} {尺寸}">號＋風管尺寸</button><button data-fmt="{樓層}-{號}">樓層-號</button><button data-fmt="PD-{樓層}-{區}{號}">分區碼</button></div>
         <div class="row2"><label for="numOrder">排序方式</label>
           <select id="numOrder">
             <option value="group">就近分群（同區連號）</option>
@@ -370,7 +372,7 @@ details.adv .hint{margin-top:4px}
         <div class="result" id="numShare"></div>
         <label class="switch" style="margin-top:10px"><input type="checkbox" id="showPath" checked> 顯示編號路徑（依順序連線）</label>
         <div class="result" id="numPreview"></div>
-        <p class="hint">全部標籤使用同一字級。格式可用 {樓層}（各頁名稱）、{頁}（頁次）、{區}（分區代號 A、B…）、{號}（流水號），其餘文字照打即可。</p>
+        <p class="hint">全部標籤使用同一字級。格式可用 {樓層}（各頁名稱）、{頁}（頁次）、{區}（分區代號 A、B…）、{號}（流水號）、{尺寸}（符號所在風管的尺寸，如風門）、{系統}（所在風管系統），其餘文字照打即可。</p>
       </div>
     </section>
 
@@ -1721,12 +1723,39 @@ const HB = { " ": 278, "-": 333, ".": 278, "_": 556, "(": 333, ")": 333, "/": 27
 "0123456789".split("").forEach(ch => HB[ch] = 556);
 const textEm = t => [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1000 : (HB[ch] || 600)), 0) / 1000;
 const ZL = i => i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + i % 26);
-function fmtLabel(c, p, n, zone) {
+function fmtLabel(c, p, n, zone, m) {
   const num = String(n).padStart(c.num.digits, "0");
   let f = c.num.fmt || "{號}";
   if (!f.includes("{號}")) f += "{號}";
   return f.replace(/\{樓層\}/g, pageName(p)).replace(/\{頁\}/g, String(p + 1))
-          .replace(/\{區\}/g, zone >= 0 ? ZL(zone) : "").replace(/\{號\}/g, num);
+          .replace(/\{區\}/g, zone >= 0 ? ZL(zone) : "").replace(/\{尺寸\}/g, m ? markSize(m, p) : "")
+          .replace(/\{系統\}/g, m ? (markDuct(m, p) || {}).sys || "" : "").replace(/\{號\}/g, num);
+}
+/* ---------- 符號所在的風管（風門等依風管尺寸標示）---------- */
+// 標記中心落在已標示風管上（距中心線含接頭延伸 ≤ 半管寬＋少許）時回傳該風管；多支時取最近者
+function markDuct(m, p) {
+  const cx = m.x + m.w / 2, cy = m.y + m.h / 2; let best = null, bd = Infinity;
+  for (const d of S.ducts) {
+    if (d.page !== p || !parseSize(d.size)) continue;
+    const g = ductGeo(d), W = ductWG(d); if (!W) continue;
+    const P = (g.PE || g.P).map(q => [q[0] * SCALE, q[1] * SCALE]), lim = W * SCALE / 2 * 1.15;
+    for (let i = 1; i < P.length; i++) {
+      const [ax, ay] = P[i - 1], [bx, by] = P[i], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / L2)) : 0;
+      const dd = Math.hypot(cx - ax - t * dx, cy - ay - t * dy);
+      if (dd <= lim && dd < bd) { bd = dd; best = d; }
+    }
+  }
+  return best;
+}
+const markSize = (m, p) => { const d = markDuct(m, p), z = d && parseSize(d.size); return z ? sizeText(z) : ""; };
+// 依風管尺寸統計：[[尺寸, 數量], ...]，不在風管上的列為「不在風管上」；沒有任何一個在風管上時回傳空陣列
+function sizeCounts(c) {
+  if (!S.ducts.length) return [];
+  const map = new Map(); let on = 0;
+  for (const p of pagesOf(c)) for (const m of marksOf(c, p)) { const z = markSize(m, p); if (z) on++; const k = z || "不在風管上"; map.set(k, (map.get(k) || 0) + 1); }
+  if (!on) return [];
+  return [...map.entries()].sort((a, b) => a[0] === "不在風管上" ? 1 : b[0] === "不在風管上" ? -1 : a[0].localeCompare(b[0], "zh-Hant", { numeric: true }));
 }
 const ctr = m => [m.x + m.w / 2, m.y + m.h / 2];
 const medianOf = a => { const b = a.slice().sort((x, y) => x - y); return b[b.length >> 1] || 0; };
@@ -1852,7 +1881,7 @@ function layoutLabels(p) {
     const seq = numberedGroup(g, p);
     for (const it of seq) {
       if (!it.c.visible) continue;
-      const m = it.m, text = fmtLabel(g.lead, p, it.n, it.zone);
+      const m = it.m, text = fmtLabel(g.lead, p, it.n, it.zone, m);
       const lw = (textEm(text) + 0.7) * fs, lh = fs * 1.55, gp = fs * 0.35, cx = m.x + m.w / 2, cy = m.y + m.h / 2;
       const cands = [];
       for (const k of [1, 2.5]) {
@@ -2063,6 +2092,8 @@ function renderSearch() {
     if (document.activeElement !== $("txtPat")) $("txtPat").value = c.txt.pat; $("txtMode").value = c.txt.whole ? "whole" : "part";
     $("rvStart").disabled = S.busy || !Object.values(c.cands).some(a => a && a.some(m => !m.del));
     $("txtList").innerHTML = c.method === "txt" ? textCounts(c).slice(0, 24).map(([t, n]) => `<span><b>${t.replace(/</g, "&lt;")}</b> × ${n}</span>`).join("") : "";
+    const szc = sizeCounts(c);
+    $("sizeList").innerHTML = szc.length ? `<div class="lbl">依所在風管尺寸</div>` + szc.map(([t, n]) => `<span><b>${t}</b> × ${n}</span>`).join("") : "";
     const all = c.cands[S.page];
     $("result").innerHTML = all ? `本頁自動找到 <b>${all.filter(m => !m.del && (m.s >= c.thr - 1e-9 || m.force)).length}</b> 個，手動 <b>${(c.manual[S.page] || []).length}</b> 個；門檻下候選 <b>${nearOf(c, S.page).length}</b> 個`
       : (c.manual[S.page] || []).length ? `本頁手動 <b>${c.manual[S.page].length}</b> 個` : "";
@@ -2240,7 +2271,7 @@ function blitPage(k, dpr) {
 let LBL = { sig: "", val: [] };
 function labelsCached(p) {
   if (!S.cats.some(c => c.num.on)) return [];
-  const parts = [p, S.labelPt, S.mergeNum, S.zoneVer, pageName(p)];
+  const parts = [p, S.labelPt, S.mergeNum, S.zoneVer, pageName(p), S.cats.some(c => /\{尺寸\}|\{系統\}/.test(c.num.fmt || "")) ? geoSig() : ""];
   for (const c of S.cats) {
     const ms = marksOf(c, p); let h = ms.length;
     for (const m of ms) h = (h * 31 + Math.round(m.x) * 7 + Math.round(m.y) * 13 + Math.round(m.w)) % 1000000007;
@@ -2512,11 +2543,13 @@ function exportCsv() {
   rows.push(["合計", "", ...tot, tot.reduce((a, b) => a + b, 0)].map(esc).join(","));
   const groups = numGroups();
   if (groups.length) {
-    rows.push(""); rows.push(["編號", "類別", "頁次", "頁面名稱", "分區"].map(esc).join(","));
+    rows.push(""); rows.push(["編號", "類別", "頁次", "頁面名稱", "分區", "風管尺寸"].map(esc).join(","));
     for (const g of groups) for (const p of pages) {
-      for (const it of numberedGroup(g, p)) rows.push([fmtLabel(g.lead, p, it.n, it.zone), it.c.name, p + 1, pageName(p), it.zone >= 0 ? ZL(it.zone) : ""].map(esc).join(","));
+      for (const it of numberedGroup(g, p)) rows.push([fmtLabel(g.lead, p, it.n, it.zone, it.m), it.c.name, p + 1, pageName(p), it.zone >= 0 ? ZL(it.zone) : "", markSize(it.m, p)].map(esc).join(","));
     }
   }
+  const sz = S.cats.map(c => [c, sizeCounts(c)]).filter(([, a]) => a.length);
+  if (sz.length) { rows.push(""); rows.push(["類別", "風管尺寸", "數量"].map(esc).join(",")); for (const [c, a] of sz) for (const [t, n] of a) rows.push([c.name, t, n].map(esc).join(",")); }
   download(new Blob(["\uFEFF" + rows.join("\r\n")], { type: "text/csv" }), `${S.fileName}_清點統計.csv`);
 }
 
@@ -3376,9 +3409,9 @@ function exportXlsx() {
   sheets.push({ name: "各頁統計", rows: R, cols: [7, 14, ...cats.map(() => 12), 10], freeze: 3, heights: { 2: 33 } });
   const groups = numGroups();
   if (groups.length) {
-    const Q = [["編號", "類別", "頁次", "頁面名稱", "分區"].map(v => ({ v, s: X.head }))];
+    const Q = [["編號", "類別", "頁次", "頁面名稱", "分區", "風管尺寸"].map(v => ({ v, s: X.head }))];
     for (const g of groups) for (const p of pages) for (const it of numberedGroup(g, p))
-      Q.push([{ v: fmtLabel(g.lead, p, it.n, it.zone), s: X.txt }, { v: it.c.name, s: X.txt }, { v: p + 1, s: X.int }, { v: pageName(p), s: X.txt }, { v: it.zone >= 0 ? ZL(it.zone) : "", s: X.ctr }]);
+      Q.push([{ v: fmtLabel(g.lead, p, it.n, it.zone, it.m), s: X.txt }, { v: it.c.name, s: X.txt }, { v: p + 1, s: X.int }, { v: pageName(p), s: X.txt }, { v: it.zone >= 0 ? ZL(it.zone) : "", s: X.ctr }]);
     sheets.push({ name: "編號明細", rows: Q, cols: [18, 16, 7, 14, 7], freeze: 1 });
   }
   const zp = pages.filter(p => zonesOf(p).length);
@@ -3400,6 +3433,12 @@ function exportXlsx() {
     const T = [["類別", "文字", "數量"].map(v => ({ v, s: X.head }))];
     for (const c of tc) for (const [t, n] of textCounts(c)) T.push([{ v: c.name, s: X.txt }, { v: t, s: X.txt }, { v: n, s: X.int }]);
     sheets.push({ name: "文字代號明細", rows: T, cols: [16, 22, 9], freeze: 1 });
+  }
+  const sc = cats.map(c => [c, sizeCounts(c)]).filter(([, a]) => a.length);
+  if (sc.length) {
+    const T = [["類別", "風管尺寸", "數量"].map(v => ({ v, s: X.head }))];
+    for (const [c, a] of sc) for (const [t, n] of a) T.push([{ v: c.name, s: X.txt }, { v: t, s: X.txt }, { v: n, s: X.int }]);
+    sheets.push({ name: "依風管尺寸", rows: T, cols: [16, 16, 9], freeze: 1 });
   }
   download(Xlsx.build(sheets), `${S.fileName}_清點統計_${stamp()}.xlsx`);
   toast("已匯出統計 Excel");
@@ -3486,7 +3525,7 @@ function setTab(t) {
   S.tab = t;
   document.querySelectorAll(".tabs button").forEach(b => { b.classList.toggle("on", b.dataset.tab === t); b.setAttribute("aria-selected", b.dataset.tab === t); });
   document.querySelectorAll(".pane").forEach(p => p.hidden = p.dataset.pane !== t);
-  if (t === "count") renderEditor();
+  if (t === "count") { renderEditor(); renderSearch(); }   // 風管可能已變動，更新「依所在風管尺寸」
   if (t === "duct") { renderDuct(); renderStyBox(true); }
   if (t === "layer") renderLayers();
   $("side").scrollTop = 0;

@@ -219,6 +219,31 @@ const near = (a, b, tol) => a != null && Math.abs(a - b) <= tol;
     check(`點 x=${x} 的邊線：分支只到主管（y ≤ 280）`, D[0] && Math.max(...D[0].pts.map(p => p[1])) < 282, D[0] && D[0].pts);
   }
 
+  console.log("● 風門依所在風管尺寸分類");
+  await open("dampers");
+  await manual([[100, 300], [450, 300]], ["800", "400"]);
+  await manual([[500, 350], [500, 650]], ["400", "250"]);
+  r = await page.evaluate(async H => {
+    S.cats = []; const c = addCategory("手動風門");
+    await setTemplate({ x: 192 * SCALE, y: (H - 308) * SCALE, w: 16 * SCALE, h: 16 * SCALE });
+    $("scope").value = "page"; await runSearch(); setTab("count");
+    c.num.on = true; c.num.fmt = "VD-{號} {尺寸}";
+    const p0 = 0, labels = numberedGroup(numGroups()[0], p0).map(it => fmtLabel(c, p0, it.n, it.zone, it.m));
+    return { n: countAll(c), sizes: sizeCounts(c), labels, ui: $("sizeList").textContent };
+  }, H);
+  check("找到 4 個風門", r.n === 4, r);
+  check("依尺寸：800×400 ×2、400×250 ×1、不在風管上 ×1", JSON.stringify(r.sizes) === JSON.stringify([["400×250", 1], ["800×400", 2], ["不在風管上", 1]]), r.sizes);
+  check("編號格式 {尺寸} 帶出風管尺寸", r.labels.filter(t => t.endsWith("800×400")).length === 2 && r.labels.some(t => t.endsWith("400×250")), r.labels);
+  check("清點面板顯示依尺寸統計", r.ui.includes("800×400") && r.ui.includes("不在風管上"), r.ui);
+  r = await page.evaluate(async () => {
+    const got = {}; const orig = window.download; window.download = (blob, name) => { got[name.endsWith(".csv") ? "csv" : "xlsx"] = blob; };
+    try { exportCsv(); exportXlsx(); } finally { window.download = orig; }
+    const csv = got.csv ? await got.csv.text() : "";
+    let xl = ""; if (got.xlsx) { const m = await Zip.read(new Uint8Array(await got.xlsx.arrayBuffer())); xl = [...m.keys()].map(k => k + ":" + (k.endsWith(".xml") ? new TextDecoder().decode(m.get(k)) : "")).join("\n"); }
+    return { csv: csv.includes("風管尺寸") && csv.includes("800×400"), xl: xl.includes("依風管尺寸") && xl.includes("800×400") };
+  });
+  check("CSV 與 Excel 匯出含依風管尺寸明細", r.csv && r.xl, r);
+
   console.log("● 輸入高度後按 Enter 完成標示（自動、手動）");
   await open("straight");
   await page.evaluate(async H => { S.dpick = "seg"; setMode("duct"); await pickClick({ x: 300 * SCALE, y: (H - 280) * SCALE }, {}); }, H);
